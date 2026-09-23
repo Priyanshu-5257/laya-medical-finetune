@@ -17,9 +17,8 @@ Public recipes to specialize [`convaiinnovations/laya`](https://huggingface.co/c
 | Script | What changes |
 |---|---|
 | `bash scripts/run_smoke.sh` | Full encoder + head fine-tune |
-| `bash scripts/run_smoke_peft.sh` | **PEFT LoRA on middle-third encoder layers only**; early/late frozen; head trainable |
-
-PEFT config: `configs/smoke_peft_middle.yaml` (LoRA r=16 on `Wqkv`/`Wo`/`Wi`, layers ≈ `[n/3, 2n/3)`).
+| `bash scripts/run_smoke_peft.sh` | PEFT LoRA on middle-third encoder layers only |
+| `bash scripts/run_smoke_middle_ft.sh` | **Full-FT middle-third layers only** (no LoRA); early/late frozen |
 
 ## Quick start (Kaggle / any multi-GPU box)
 

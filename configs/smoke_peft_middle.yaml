@@ -13,7 +13,6 @@ peft:
   lora_dropout: 0.05
   target_modules: [Wqkv, Wo, Wi]
   allow_freeze_fallback: true
-  # decision head stays fully trainable
 
 train:
   medmcqa_n: 4000
@@ -23,7 +22,7 @@ train:
   micro_batch: 8
   grad_accum: 4
   group_size: 4
-  lr_encoder: 5.0e-5      # slightly higher for LoRA adapters
+  lr_encoder: 5.0e-5
   lr_head: 1.0e-4
   sigma_start: 0.4
   sigma_end: 0.1
