@@ -92,16 +92,21 @@ def build_medmcqa_items(tok, cfg: Dict, n: int, seed: int, shuffle_options: bool
 
 def _load_mednli(split: str):
     errors = []
+    # araag2/MedNLI requires an explicit config (Hub error lists these names).
     for loader in (
-        lambda: load_dataset("philschmid/mednli", split=split),
-        lambda: load_dataset("araag2/MedNLI", split=split),
-        lambda: load_dataset("bigbio/med_nli", "med_nli_source", split=split),
+        lambda: load_dataset("araag2/MedNLI", "processed", split=split),
+        lambda: load_dataset("araag2/MedNLI", "source", split=split),
+        lambda: load_dataset("araag2/MedNLI", "conversational", split=split),
+        lambda: load_dataset("bigbio/med_nli", "med_nli_source", split=split, trust_remote_code=True),
     ):
         try:
             return loader()
         except Exception as e:
             errors.append(str(e))
-    raise RuntimeError("Could not load MedNLI. Tried philschmid/mednli, araag2/MedNLI, bigbio/med_nli. Errors: " + " | ".join(errors))
+    raise RuntimeError(
+        "Could not load MedNLI. Tried araag2/MedNLI configs + bigbio/med_nli. Errors: "
+        + " | ".join(errors)
+    )
 
 
 def build_mednli_items(tok, cfg: Dict, n: int, seed: int, shuffle_options: bool, split: str = "train") -> List[Dict]:
