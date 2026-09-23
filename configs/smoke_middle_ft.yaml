@@ -1,19 +1,13 @@
-# Same data/eval as smoke.yaml, but PEFT LoRA on middle encoder layers only.
+# Same data/eval as smoke; full-FT middle-third encoder layers only (no LoRA).
 model_id: convaiinnovations/laya
 max_len: 512
 head_max_len: 192
 
 peft:
   enabled: true
-  mode: lora             # middle-third LoRA; early/late frozen
+  mode: full_ft          # middle-layer full fine-tune; early/late frozen
   start_frac: 0.333
   end_frac: 0.667
-  r: 16
-  lora_alpha: 32
-  lora_dropout: 0.05
-  target_modules: [Wqkv, Wo, Wi]
-  allow_freeze_fallback: true
-  # decision head stays fully trainable
 
 train:
   medmcqa_n: 4000
@@ -23,7 +17,7 @@ train:
   micro_batch: 8
   grad_accum: 4
   group_size: 4
-  lr_encoder: 5.0e-5      # slightly higher for LoRA adapters
+  lr_encoder: 2.5e-5     # same as full-FT smoke for fair compare
   lr_head: 1.0e-4
   sigma_start: 0.4
   sigma_end: 0.1

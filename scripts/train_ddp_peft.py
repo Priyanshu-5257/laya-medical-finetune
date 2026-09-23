@@ -17,7 +17,7 @@ from transformers import AutoTokenizer
 
 from laya.common import build_model, proper_reward
 from laya_medical import collate_train_batch, fit_one_temp, load_yaml
-from laya_medical.peft_middle import apply_middle_lora, count_trainable, merge_encoder_if_peft
+from laya_medical.peft_middle import apply_middle_tuning, count_trainable, merge_encoder_if_peft
 
 
 def parse_args():
@@ -79,15 +79,7 @@ def main():
 
     peft_meta = {}
     if pconf.get("enabled", True):
-        model.encoder, peft_meta = apply_middle_lora(
-            model.encoder,
-            start_frac=float(pconf.get("start_frac", 1 / 3)),
-            end_frac=float(pconf.get("end_frac", 2 / 3)),
-            r=int(pconf.get("r", 16)),
-            lora_alpha=int(pconf.get("lora_alpha", 32)),
-            lora_dropout=float(pconf.get("lora_dropout", 0.05)),
-            target_modules=pconf.get("target_modules"),
-        )
+        model.encoder, peft_meta = apply_middle_tuning(model.encoder, pconf)
         # Decision head stays fully trainable.
         for n, p in model.named_parameters():
             if not n.startswith("encoder."):
@@ -283,7 +275,7 @@ def main():
             print("Temperature fit fallback:", e)
 
         cfg["fine_tuned"] = True
-        cfg["model_name"] = "laya-medical-smoke-peft-middle"
+        cfg["model_name"] = f"laya-medical-smoke-{peft_meta.get('mode', 'middle')}"
         cfg["temperature"] = fitted_temps
         cfg.pop("temperature_by_options", None)
         cfg["peft"] = peft_meta
