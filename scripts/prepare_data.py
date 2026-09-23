@@ -36,16 +36,27 @@ def _subsample(rows: List[Any], n: int, seed: int) -> List[Any]:
     return rng.sample(rows, n)
 
 
+def _cap_reached(out_len: int, n: int) -> bool:
+    """n <= 0 means no cap (use full split after filtering)."""
+    return n > 0 and out_len >= n
+
+
 def build_medmcqa_items(tok, cfg: Dict, n: int, seed: int, shuffle_options: bool) -> List[Dict]:
     # openlifescienceai/medmcqa: cop is ClassLabel 0–3 (a,b,c,d). Do NOT dual-map 1-based.
     ds = load_dataset("openlifescienceai/medmcqa", split="train")
-    print("medmcqa cop scheme: fixed ClassLabel 0–3 → A,B,C,D", flush=True)
-    rows = _subsample(list(ds), n * 2, seed)  # oversample; some rows drop on empty options
+    print(
+        f"medmcqa cop scheme: fixed ClassLabel 0–3 → A,B,C,D | "
+        f"requested_n={'all' if n <= 0 else n} (pool={len(ds)})",
+        flush=True,
+    )
+    # n<=0 → full pool; else oversample 2× then filter up to n
+    take = len(ds) if n <= 0 else n * 2
+    rows = _subsample(list(ds), take, seed)
     rng = random.Random(seed + 1)
     out: List[Dict] = []
     max_len, head = cfg["max_len"], cfg["head_max_len"]
     for row in rows:
-        if len(out) >= n:
+        if _cap_reached(len(out), n):
             break
         opts = {
             "A": str(row.get("opa", "") or ""),
@@ -111,7 +122,9 @@ def _load_mednli(split: str):
 
 def build_mednli_items(tok, cfg: Dict, n: int, seed: int, shuffle_options: bool, split: str = "train") -> List[Dict]:
     ds = _load_mednli(split)
-    rows = _subsample(list(ds), n * 2, seed)
+    take = len(ds) if n <= 0 else n * 2
+    rows = _subsample(list(ds), take, seed)
+    print(f"mednli requested_n={'all' if n <= 0 else n} (pool={len(ds)})", flush=True)
     rng = random.Random(seed + 2)
     out: List[Dict] = []
     max_len, head = cfg["max_len"], cfg["head_max_len"]
@@ -127,7 +140,7 @@ def build_mednli_items(tok, cfg: Dict, n: int, seed: int, shuffle_options: bool,
         "2": "neutral",
     }
     for row in rows:
-        if len(out) >= n:
+        if _cap_reached(len(out), n):
             break
         gold = (
             row.get("Label")
