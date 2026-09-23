@@ -17,6 +17,8 @@ from transformers import AutoTokenizer
 
 from laya.common import build_model, proper_reward
 from laya_medical import collate_train_batch, fit_one_temp, load_yaml
+from laya_medical.eval_metrics import eval_packs, flatten_eval_for_log
+from laya_medical.wandb_util import maybe_init_wandb, wandb_finish, wandb_log
 
 
 def parse_args():
@@ -25,10 +27,34 @@ def parse_args():
     ap.add_argument("--model-dir", required=True)
     ap.add_argument("--train-items", required=True)
     ap.add_argument("--output-dir", required=True)
+    ap.add_argument("--eval-packs", default=None, help="Optional dual-eval packs for per-epoch eval")
     ap.add_argument("--epochs", type=int, default=None)
     ap.add_argument("--ce-weight", type=float, default=None)
     ap.add_argument("--group-size", type=int, default=None)
     return ap.parse_args()
+
+
+def _run_dual_eval(model, tok, packs, device, base_metrics=None):
+    model.eval()
+    with torch.no_grad():
+        ft_metrics = eval_packs(model, tok, packs, device)
+    model.train()
+    out = {"finetuned": ft_metrics}
+    if base_metrics is not None:
+        deltas = {}
+        for domain in packs:
+            deltas[domain] = {}
+            for task in list(packs[domain]) + ["_all"]:
+                b = base_metrics[domain][task]["accuracy"]
+                f = ft_metrics[domain][task]["accuracy"]
+                deltas[domain][task] = {
+                    "accuracy_base": b,
+                    "accuracy_ft": f,
+                    "accuracy_delta": (f - b) if (b == b and f == f) else None,
+                }
+        out["base"] = base_metrics
+        out["deltas"] = deltas
+    return out
 
 
 def main():
@@ -82,6 +108,13 @@ def main():
     CE_WEIGHT = float(args.ce_weight if args.ce_weight is not None else tconf.get("ce_weight", 0.0))
     W_SPH = float(tconf.get("sph_weight", 0.5))
     W_RPS = float(tconf.get("rps_weight", 1.0))
+    LOG_EVERY = int(tconf.get("log_every", 25))
+    EVAL_EVERY_EPOCH = bool(tconf.get("eval_every_epoch", True))
+
+    eval_packs_path = args.eval_packs
+    packs = None
+    if eval_packs_path and os.path.isfile(eval_packs_path):
+        packs = torch.load(eval_packs_path, weights_only=False)
 
     enc_params = [p for n, p in ddp_model.named_parameters() if "encoder." in n]
     head_params = [p for n, p in ddp_model.named_parameters() if "encoder." not in n]
@@ -95,17 +128,57 @@ def main():
     )
     scaler = torch.amp.GradScaler("cuda", enabled=True)
 
+    wb = None
+    base_metrics = None
+    global_step = 0
     if rank == 0:
         print(
             f"DDP world={world_size} | train={len(train_items)} "
             f"(calib holdout={len(calib_items)}) | per_rank={len(my_items)} | "
             f"epochs={EPOCHS} | G={GROUP_SIZE} | ce_weight={CE_WEIGHT} | "
-            f"max_len={cfg['max_len']}",
+            f"max_len={cfg['max_len']} | eval_every_epoch={EVAL_EVERY_EPOCH and packs is not None}",
             flush=True,
         )
+        wb = maybe_init_wandb(
+            conf,
+            {
+                "model_id": conf.get("model_id"),
+                "epochs": EPOCHS,
+                "medmcqa_n": tconf.get("medmcqa_n"),
+                "mednli_n": tconf.get("mednli_n"),
+                "lr_encoder": LR_ENCODER,
+                "lr_head": LR_HEAD,
+                "micro_batch": MICRO_BATCH,
+                "grad_accum": GRAD_ACCUM,
+                "group_size": GROUP_SIZE,
+                "ce_weight": CE_WEIGHT,
+                "max_len": cfg["max_len"],
+                "world_size": world_size,
+                "n_train": len(train_items),
+            },
+        )
+        if packs is not None and EVAL_EVERY_EPOCH:
+            print("Evaluating BASE checkpoint (once)...", flush=True)
+            base_metrics = eval_packs(model, tok, packs, device)
+            wandb_log(
+                wb,
+                {
+                    **flatten_eval_for_log(base_metrics, "base"),
+                    "epoch": 0,
+                },
+                step=0,
+            )
+            print(
+                f"  base generic={base_metrics['generic']['_all']['accuracy']:.4f} "
+                f"medical={base_metrics['medical']['_all']['accuracy']:.4f}",
+                flush=True,
+            )
+
+    dist.barrier()
 
     t0 = time.time()
     history = []
+    epoch_evals = []
     for epoch in range(EPOCHS):
         random.seed(42 + epoch + rank)
         random.shuffle(my_items)
@@ -165,16 +238,31 @@ def main():
                 scaler.update()
                 scheduler.step()
                 optimizer.zero_grad(set_to_none=True)
+                global_step += 1
 
             epoch_loss += float(loss.item() * GRAD_ACCUM)
             reward_sum += float(r.mean().item())
             n_batches += 1
-            if rank == 0 and (n_batches % 25) == 0:
+            if rank == 0 and (n_batches % LOG_EVERY) == 0:
+                step_loss = loss.item() * GRAD_ACCUM
+                step_r = r.mean().item()
+                lr0 = scheduler.get_last_lr()[0]
                 print(
                     f"  epoch {epoch+1}/{EPOCHS} step {n_batches} "
-                    f"loss={loss.item()*GRAD_ACCUM:.4f} reward={r.mean().item():.3f} "
-                    f"lr={scheduler.get_last_lr()[0]:.2e}",
+                    f"loss={step_loss:.4f} reward={step_r:.3f} "
+                    f"lr={lr0:.2e}",
                     flush=True,
+                )
+                wandb_log(
+                    wb,
+                    {
+                        "train/loss": step_loss,
+                        "train/reward": step_r,
+                        "train/lr_encoder": lr0,
+                        "train/sigma": sigma,
+                        "epoch": epoch + 1,
+                    },
+                    step=global_step,
                 )
 
         avg_loss = epoch_loss / max(1, n_batches)
@@ -185,7 +273,7 @@ def main():
                 f"| avg_loss={avg_loss:.4f} | avg_reward={avg_r:.3f} ===",
                 flush=True,
             )
-            history.append({"epoch": epoch + 1, "avg_loss": avg_loss, "avg_reward": avg_r})
+            hist_row = {"epoch": epoch + 1, "avg_loss": avg_loss, "avg_reward": avg_r}
             ckpt_dir = os.path.join(args.output_dir, "checkpoint_latest")
             os.makedirs(ckpt_dir, exist_ok=True)
             sd = {k: v.half().contiguous().cpu() for k, v in model.state_dict().items()}
@@ -194,6 +282,54 @@ def main():
             tok.save_pretrained(os.path.join(ckpt_dir, "tokenizer"))
             with open(os.path.join(ckpt_dir, "checkpoint_meta.json"), "w") as f:
                 json.dump({"epoch": epoch + 1, "total_epochs": EPOCHS, "avg_loss": avg_loss}, f, indent=2)
+
+            if packs is not None and EVAL_EVERY_EPOCH:
+                print(f"=== dual eval after epoch {epoch+1} ===", flush=True)
+                report = _run_dual_eval(model, tok, packs, device, base_metrics=base_metrics)
+                ft = report["finetuned"]
+                g = ft["generic"]["_all"]["accuracy"]
+                m = ft["medical"]["_all"]["accuracy"]
+                gd = report.get("deltas", {}).get("generic", {}).get("_all", {}).get("accuracy_delta")
+                md = report.get("deltas", {}).get("medical", {}).get("_all", {}).get("accuracy_delta")
+                print(
+                    f"  epoch {epoch+1} eval generic={g:.4f} (Δ={gd}) "
+                    f"medical={m:.4f} (Δ={md})",
+                    flush=True,
+                )
+                hist_row["generic_acc"] = g
+                hist_row["medical_acc"] = m
+                hist_row["generic_delta"] = gd
+                hist_row["medical_delta"] = md
+                epoch_evals.append({"epoch": epoch + 1, "report": report})
+                eval_path = os.path.join(args.output_dir, f"eval_epoch_{epoch+1}.json")
+                os.makedirs(args.output_dir, exist_ok=True)
+                with open(eval_path, "w") as f:
+                    json.dump(report, f, indent=2)
+                log_payload = {
+                    **flatten_eval_for_log(ft, "eval"),
+                    "eval/generic_acc": g,
+                    "eval/medical_acc": m,
+                    "train/epoch_loss": avg_loss,
+                    "train/epoch_reward": avg_r,
+                    "epoch": epoch + 1,
+                }
+                if gd is not None:
+                    log_payload["eval/generic_delta"] = gd
+                if md is not None:
+                    log_payload["eval/medical_delta"] = md
+                wandb_log(wb, log_payload, step=global_step)
+            else:
+                wandb_log(
+                    wb,
+                    {
+                        "train/epoch_loss": avg_loss,
+                        "train/epoch_reward": avg_r,
+                        "epoch": epoch + 1,
+                    },
+                    step=global_step,
+                )
+
+            history.append(hist_row)
 
         dist.barrier()
 
@@ -235,7 +371,7 @@ def main():
         model.encoder.config.save_pretrained(os.path.join(args.output_dir, "encoder"))
         tok.save_pretrained(os.path.join(args.output_dir, "tokenizer"))
         cfg["fine_tuned"] = True
-        cfg["model_name"] = "laya-medical-smoke"
+        cfg["model_name"] = "laya-medical-full"
         cfg["temperature"] = fitted_temps
         cfg.pop("temperature_by_options", None)
         with open(os.path.join(args.output_dir, "rl_agent_config.json"), "w") as f:
@@ -244,6 +380,7 @@ def main():
             json.dump(
                 {
                     "history": history,
+                    "epoch_evals_present": bool(epoch_evals),
                     "seconds": time.time() - t0,
                     "n_train": len(train_items),
                     "n_calib": len(calib_items),
@@ -255,13 +392,46 @@ def main():
                 f,
                 indent=2,
             )
+        # final calibrated dual eval
+        if packs is not None:
+            model.temperature.copy_(torch.tensor(fitted_temps, dtype=torch.float32))
+            print("=== final dual eval (calibrated temps) ===", flush=True)
+            final_report = _run_dual_eval(model, tok, packs, device, base_metrics=base_metrics)
+            with open(os.path.join(args.output_dir, "eval_final.json"), "w") as f:
+                json.dump(final_report, f, indent=2)
+            ft = final_report["finetuned"]
+            wandb_log(
+                wb,
+                {
+                    **flatten_eval_for_log(ft, "final"),
+                    "final/generic_acc": ft["generic"]["_all"]["accuracy"],
+                    "final/medical_acc": ft["medical"]["_all"]["accuracy"],
+                    "final/generic_delta": final_report.get("deltas", {})
+                    .get("generic", {})
+                    .get("_all", {})
+                    .get("accuracy_delta"),
+                    "final/medical_delta": final_report.get("deltas", {})
+                    .get("medical", {})
+                    .get("_all", {})
+                    .get("accuracy_delta"),
+                    "temps/choice": fitted_temps[0],
+                    "temps/score": fitted_temps[1],
+                    "temps/noul": fitted_temps[2],
+                },
+                step=global_step + 1,
+            )
+            print(json.dumps({
+                "generic": ft["generic"]["_all"]["accuracy"],
+                "medical": ft["medical"]["_all"]["accuracy"],
+                "deltas": final_report.get("deltas"),
+            }, indent=2), flush=True)
         print(f"Saved checkpoint to {args.output_dir}", flush=True)
+        wandb_finish(wb)
 
     dist.destroy_process_group()
 
 
 if __name__ == "__main__":
-    # Allow `python scripts/train_ddp.py` and `torchrun scripts/train_ddp.py`
     root = Path(__file__).resolve().parents[1]
     if str(root) not in sys.path:
         sys.path.insert(0, str(root))

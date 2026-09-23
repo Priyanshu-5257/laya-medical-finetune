@@ -11,4 +11,5 @@ pyarrow
 tabulate
 PyYAML
 peft>=0.13.0
+wandb
 torch
