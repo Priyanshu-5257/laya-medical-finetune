@@ -129,10 +129,17 @@ def build_mednli_items(tok, cfg: Dict, n: int, seed: int, shuffle_options: bool,
     for row in rows:
         if len(out) >= n:
             break
-        gold = row.get("gold_label") or row.get("label") or row.get("labels")
+        gold = (
+            row.get("Label")
+            or row.get("gold_label")
+            or row.get("label")
+            or row.get("labels")
+        )
         if isinstance(gold, list) and gold:
             gold = gold[0]
         gold = label_map.get(gold, gold)
+        if isinstance(gold, str):
+            gold = gold.lower().strip()
         if gold not in ("entailment", "contradiction", "neutral"):
             continue
         keys = ["entailment", "contradiction", "neutral"]
@@ -145,8 +152,20 @@ def build_mednli_items(tok, cfg: Dict, n: int, seed: int, shuffle_options: bool,
         criteria = {k: criteria[k] for k in keys}
         target = one_hot(len(keys), keys.index(gold))
         state = {
-            "premise": row.get("sentence1") or row.get("premise") or row.get("premise_text") or row.get("sentence_1"),
-            "hypothesis": row.get("sentence2") or row.get("hypothesis") or row.get("hypothesis_text") or row.get("sentence_2"),
+            "premise": (
+                row.get("Premise")
+                or row.get("sentence1")
+                or row.get("premise")
+                or row.get("premise_text")
+                or row.get("sentence_1")
+            ),
+            "hypothesis": (
+                row.get("Hypothesis")
+                or row.get("sentence2")
+                or row.get("hypothesis")
+                or row.get("hypothesis_text")
+                or row.get("sentence_2")
+            ),
         }
         if not state["premise"] or not state["hypothesis"]:
             continue
@@ -167,7 +186,7 @@ def build_mednli_items(tok, cfg: Dict, n: int, seed: int, shuffle_options: bool,
 
 
 def build_ag_news_items(tok, cfg: Dict, n: int, seed: int) -> List[Dict]:
-    ds = load_dataset("ag_news", split="test")
+    ds = load_dataset("fancyzhx/ag_news", split="test")
     rows = _subsample(list(ds), n, seed)
     labels = ["World", "Sports", "Business", "Sci/Tech"]
     out = []
@@ -193,7 +212,10 @@ def build_ag_news_items(tok, cfg: Dict, n: int, seed: int) -> List[Dict]:
 
 
 def build_emotion_items(tok, cfg: Dict, n: int, seed: int) -> List[Dict]:
-    ds = load_dataset("dair-ai/emotion", split="test")
+    try:
+        ds = load_dataset("dair-ai/emotion", "split", split="test")
+    except Exception:
+        ds = load_dataset("dair-ai/emotion", split="test")
     rows = _subsample(list(ds), n, seed)
     names = ["sadness", "joy", "love", "anger", "fear", "surprise"]
     out = []
