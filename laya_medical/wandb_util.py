@@ -15,7 +15,16 @@ def resolve_wandb_api_key() -> Optional[str]:
         from kaggle_secrets import UserSecretsClient
 
         client = UserSecretsClient()
-        for name in ("wandb_api_key", "WANDB_API_KEY", "wandb"):
+        for name in (
+            "wandb_api_key",
+            "WANDB_API_KEY",
+            "wandb",
+            "wandb-api-key",
+            "wandb_key",
+            "WANDB",
+            "wb_api_key",
+            "WANDB_KEY",
+        ):
             try:
                 v = client.get_secret(name)
             except Exception:
