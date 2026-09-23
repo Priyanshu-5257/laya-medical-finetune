@@ -193,8 +193,9 @@ def main():
                     w_sph=W_SPH,
                     w_rps=W_RPS,
                 )
-                adv = r - r.mean(0, keepdim=True)
-                adv = adv / (adv.std() + 1e-6)
+                # Group-wise mean baseline + per-question std (not batch-wide).
+                adv = r - r.mean(dim=0, keepdim=True)
+                adv = adv / (r.std(dim=0, keepdim=True) + 1e-6)
 
             logp = -(((z - logits.unsqueeze(0)) ** 2) * mask).sum(-1) / (2 * sigma**2)
             loss_rl = -(adv * logp).mean()

@@ -8,7 +8,7 @@ Public recipes to specialize [`convaiinnovations/laya`](https://huggingface.co/c
 |---|---|
 | Base | `convaiinnovations/laya` (512 context) |
 | Train | MedMCQA (~4k) + MedNLI (~1k), option-shuffled hard labels |
-| Objective | Pure RLCD (`ce_weight=0`), GRPO-style group baseline |
+| Objective | Pure RLCD (`ce_weight=0`), REINFORCE + group-mean baseline (GRPO-style) |
 | Eval A (generic) | AG News + DAIR Emotion (forgetting check) |
 | Eval B (medical held-out) | PubMedQA labeled + MedQA USMLE (never in train) |
 
@@ -56,6 +56,9 @@ kaggle/laya-medical-smoke/   # thin kernel: clone this repo + run_smoke.sh
 ## Training notes
 
 - Keep **RLCD** as the main loss; do not swap to pure CE (destroys calibration).
+- RLCD with **one-hot MCQ labels** still pushes mass onto the gold option per example; it does **not** by itself invent epistemic uncertainty. Held-out temperature fit + NLL/Brier/ECE are what we use to judge calibration.
+- MedMCQA `cop` is resolved **once** from dataset features (HF build is ClassLabel `0–3`); never dual 0-based/1-based per row.
+- Advantages use a **per-question** group mean/std (not a batch-wide z-score).
 - Calibration temperatures are fit on a **held-out** slice of the train pool.
 - Pass gate before a longer run: medical accuracy up vs base, generic not collapsed.
 
