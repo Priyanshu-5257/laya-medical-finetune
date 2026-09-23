@@ -57,8 +57,8 @@ kaggle/laya-medical-smoke/   # thin kernel: clone this repo + run_smoke.sh
 
 - Keep **RLCD** as the main loss; do not swap to pure CE (destroys calibration).
 - RLCD with **one-hot MCQ labels** still pushes mass onto the gold option per example; it does **not** by itself invent epistemic uncertainty. Held-out temperature fit + NLL/Brier/ECE are what we use to judge calibration.
-- MedMCQA `cop` is resolved **once** from dataset features (HF build is ClassLabel `0–3`); never dual 0-based/1-based per row.
-- Advantages use a **per-question** group mean/std (not a batch-wide z-score).
+- MedMCQA `cop` is **fixed ClassLabel 0–3** → A,B,C,D (never dual 0/1-based). Always regenerate `train_items.pt` after changing this.
+- Advantages use a **per-question** group mean/std (`unbiased=False`), not a batch-wide z-score.
 - Calibration temperatures are fit on a **held-out** slice of the train pool.
 - Pass gate before a longer run: medical accuracy up vs base, generic not collapsed.
 

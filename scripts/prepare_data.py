@@ -36,49 +36,10 @@ def _subsample(rows: List[Any], n: int, seed: int) -> List[Any]:
     return rng.sample(rows, n)
 
 
-def _resolve_medmcqa_cop_scheme(ds) -> Dict[int, str]:
-    """Pick one global cop→ABCD map for this dataset build (never per-row).
-
-    openlifescienceai/medmcqa currently ships cop as ClassLabel names=['a','b','c','d']
-    (values 0–3). Official docs describe 1–4; do not try to infer both per example —
-    values 1–3 are ambiguous between the two schemes.
-    """
-    feat = getattr(ds, "features", None)
-    cop_feat = feat.get("cop") if feat is not None else None
-    names = [str(x).lower() for x in getattr(cop_feat, "names", []) or []]
-    if names == ["a", "b", "c", "d"]:
-        scheme = {0: "A", 1: "B", 2: "C", 3: "D"}
-        print("medmcqa cop scheme: ClassLabel 0–3 (a,b,c,d) → A,B,C,D", flush=True)
-        return scheme
-
-    # Fallback: inspect a small sample once.
-    sample_n = min(200, len(ds))
-    vals = []
-    for i in range(sample_n):
-        try:
-            vals.append(int(ds[i]["cop"]))
-        except Exception:
-            continue
-    if not vals:
-        raise RuntimeError("medmcqa: could not read any cop values to resolve indexing")
-    vmin, vmax = min(vals), max(vals)
-    if vmin == 0 and vmax == 3:
-        scheme = {0: "A", 1: "B", 2: "C", 3: "D"}
-        print(f"medmcqa cop scheme: sampled {{0..3}} (n={sample_n}) → 0-based", flush=True)
-        return scheme
-    if vmin == 1 and vmax == 4:
-        scheme = {1: "A", 2: "B", 3: "C", 4: "D"}
-        print(f"medmcqa cop scheme: sampled {{1..4}} (n={sample_n}) → 1-based", flush=True)
-        return scheme
-    raise RuntimeError(
-        f"medmcqa cop scheme unresolved: sample min={vmin} max={vmax} "
-        f"(expected 0–3 ClassLabel or 1–4 docs). Refusing ambiguous dual mapping."
-    )
-
-
 def build_medmcqa_items(tok, cfg: Dict, n: int, seed: int, shuffle_options: bool) -> List[Dict]:
+    # openlifescienceai/medmcqa: cop is ClassLabel 0–3 (a,b,c,d). Do NOT dual-map 1-based.
     ds = load_dataset("openlifescienceai/medmcqa", split="train")
-    cop_map = _resolve_medmcqa_cop_scheme(ds)
+    print("medmcqa cop scheme: fixed ClassLabel 0–3 → A,B,C,D", flush=True)
     rows = _subsample(list(ds), n * 2, seed)  # oversample; some rows drop on empty options
     rng = random.Random(seed + 1)
     out: List[Dict] = []
@@ -98,10 +59,12 @@ def build_medmcqa_items(tok, cfg: Dict, n: int, seed: int, shuffle_options: bool
         cop = row.get("cop")
         try:
             cop_i = int(cop)
-        except Exception:
+        except (TypeError, ValueError):
             continue
-        label_key = cop_map.get(cop_i)
-        if label_key is None or label_key not in keys:
+        if cop_i not in (0, 1, 2, 3):
+            continue
+        label_key = ("A", "B", "C", "D")[cop_i]
+        if label_key not in keys:
             continue
         keys, label_key = maybe_shuffle_choice(keys, label_key, rng=rng, enabled=shuffle_options)
         criteria = {k: opts[k] for k in keys}
