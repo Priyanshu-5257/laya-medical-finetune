@@ -1,0 +1,13 @@
+laya>=0.3.7
+transformers>=4.48.0
+datasets>=3.0.0
+safetensors
+huggingface_hub
+accelerate
+scipy
+numpy
+pandas
+pyarrow
+tabulate
+PyYAML
+torch
