@@ -33,7 +33,8 @@ if [[ -z "$NPROC" ]]; then
 fi
 echo "Using nproc_per_node=$NPROC"
 
-echo "=== prepare_data ==="
+echo "=== prepare_data (force rebuild; do not reuse stale train_items.pt) ==="
+rm -f "$DATA_DIR/train_items.pt" "$DATA_DIR/eval_packs.pt" "$DATA_DIR/data_meta.json"
 python scripts/prepare_data.py --config "$CONFIG" --out-dir "$DATA_DIR"
 
 MODEL_DIR="$(python - <<PY
