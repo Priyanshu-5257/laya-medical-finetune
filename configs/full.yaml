@@ -1,4 +1,6 @@
-# Longer full fine-tune on Kaggle 2×T4 (~5–7h wall: ~30k Q × 3 epochs + per-epoch dual eval)
+# Longer full fine-tune on Kaggle 2×T4 (~30k Q × 10 epochs + per-epoch dual eval)
+# Wall-clock: expect ~15–20h on T4×2 — may need a long session / reattach; dataset is NOT the limit
+# (MedMCQA train has ~183k rows; we subsample ~30k and pass over it 10×).
 model_id: convaiinnovations/laya
 max_len: 512
 head_max_len: 192
@@ -13,7 +15,7 @@ train:
   medmcqa_n: 24000
   mednli_n: 6000
   seed: 20260923
-  epochs: 3
+  epochs: 10
   micro_batch: 8
   grad_accum: 4
   group_size: 4
