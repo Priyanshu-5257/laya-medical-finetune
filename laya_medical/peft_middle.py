@@ -1,7 +1,7 @@
-"""PEFT helpers: LoRA on middle encoder layers only; freeze the rest."""
+"""PEFT-style middle-layer training: LoRA if possible, else freeze early/late."""
 from __future__ import annotations
 
-from typing import Any, Dict, List, Sequence, Tuple
+from typing import Any, Dict, Sequence, Tuple
 
 import torch.nn as nn
 
@@ -24,6 +24,40 @@ def get_encoder_layers(encoder: nn.Module) -> Tuple[nn.ModuleList, str]:
     raise AttributeError(f"Cannot locate transformer layers on {type(encoder)}")
 
 
+def apply_middle_layer_freeze(
+    encoder: nn.Module,
+    *,
+    start_frac: float = 1.0 / 3.0,
+    end_frac: float = 2.0 / 3.0,
+) -> Tuple[nn.Module, Dict[str, Any]]:
+    """Freeze embeddings + early/late layers; full-FT only the middle block."""
+    layers, pattern = get_encoder_layers(encoder)
+    n = len(layers)
+    mid_start, mid_end = middle_layer_range(n, start_frac, end_frac)
+    middle = list(range(mid_start, mid_end))
+
+    for p in encoder.parameters():
+        p.requires_grad = False
+    for i in middle:
+        for p in layers[i].parameters():
+            p.requires_grad = True
+
+    trainable = sum(p.numel() for p in encoder.parameters() if p.requires_grad)
+    total = sum(p.numel() for p in encoder.parameters())
+    meta = {
+        "mode": "middle_layer_freeze",
+        "n_layers": n,
+        "middle_start": mid_start,
+        "middle_end": mid_end,
+        "middle_indices": middle,
+        "layers_pattern": pattern,
+        "trainable_encoder_params": int(trainable),
+        "total_encoder_params": int(total),
+        "trainable_encoder_pct": float(100.0 * trainable / max(1, total)),
+    }
+    return encoder, meta
+
+
 def apply_middle_lora(
     encoder: nn.Module,
     *,
@@ -33,24 +67,32 @@ def apply_middle_lora(
     lora_alpha: int = 32,
     lora_dropout: float = 0.05,
     target_modules: Sequence[str] | None = None,
+    allow_freeze_fallback: bool = True,
 ) -> Tuple[nn.Module, Dict[str, Any]]:
     """Wrap encoder with PEFT LoRA on the middle third of layers only.
 
-    Early/late layer base weights stay frozen (no adapters). Embeddings stay frozen.
+    Falls back to freezing early/late + full-FT middle layers if peft/torchao
+    is incompatible (common on some Kaggle images).
     """
-    from peft import LoraConfig, get_peft_model
+    try:
+        from peft import LoraConfig, get_peft_model
+    except Exception as e:
+        if allow_freeze_fallback:
+            meta_fb = {"lora_error": f"peft import failed: {e}"}
+            enc, meta = apply_middle_layer_freeze(encoder, start_frac=start_frac, end_frac=end_frac)
+            meta.update(meta_fb)
+            return enc, meta
+        raise
 
     layers, pattern = get_encoder_layers(encoder)
     n = len(layers)
     mid_start, mid_end = middle_layer_range(n, start_frac, end_frac)
     middle = list(range(mid_start, mid_end))
 
-    # Freeze entire encoder first; LoRA injects trainable adapters on selected layers.
     for p in encoder.parameters():
         p.requires_grad = False
 
     targets = list(target_modules) if target_modules else ["Wqkv", "Wo", "Wi"]
-    # layers_pattern leaf name expected by peft (e.g. "layers")
     leaf = pattern.split(".")[-1]
     lora_cfg = LoraConfig(
         r=int(r),
@@ -61,11 +103,22 @@ def apply_middle_lora(
         layers_to_transform=middle,
         layers_pattern=leaf,
     )
-    peft_encoder = get_peft_model(encoder, lora_cfg)
+    try:
+        peft_encoder = get_peft_model(encoder, lora_cfg)
+    except Exception as e:
+        if allow_freeze_fallback:
+            # Restore a clean encoder path: reload requires_grad via freeze helper.
+            # get_peft_model may have partially mutated modules; freeze helper re-sets flags.
+            enc, meta = apply_middle_layer_freeze(encoder, start_frac=start_frac, end_frac=end_frac)
+            meta["lora_error"] = str(e)
+            meta["fallback"] = "middle_layer_freeze"
+            return enc, meta
+        raise
 
     trainable = sum(p.numel() for p in peft_encoder.parameters() if p.requires_grad)
     total = sum(p.numel() for p in peft_encoder.parameters())
     meta = {
+        "mode": "middle_lora",
         "n_layers": n,
         "middle_start": mid_start,
         "middle_end": mid_end,
