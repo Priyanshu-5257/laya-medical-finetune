@@ -45,7 +45,7 @@ def apply_middle_layer_freeze(
     trainable = sum(p.numel() for p in encoder.parameters() if p.requires_grad)
     total = sum(p.numel() for p in encoder.parameters())
     meta = {
-        "mode": "middle_layer_freeze",
+        "mode": "middle_layer_full_ft",
         "n_layers": n,
         "middle_start": mid_start,
         "middle_end": mid_end,
@@ -132,6 +132,26 @@ def apply_middle_lora(
         "trainable_encoder_pct": float(100.0 * trainable / max(1, total)),
     }
     return peft_encoder, meta
+
+
+def apply_middle_tuning(encoder: nn.Module, peft_conf: Dict[str, Any] | None = None):
+    """Dispatch: mode=lora | full_ft (middle-layer full fine-tune, no LoRA)."""
+    peft_conf = peft_conf or {}
+    start_frac = float(peft_conf.get("start_frac", 1 / 3))
+    end_frac = float(peft_conf.get("end_frac", 2 / 3))
+    mode = str(peft_conf.get("mode", "full_ft")).lower()
+    if mode in ("lora", "middle_lora", "peft_lora"):
+        return apply_middle_lora(
+            encoder,
+            start_frac=start_frac,
+            end_frac=end_frac,
+            r=int(peft_conf.get("r", 16)),
+            lora_alpha=int(peft_conf.get("lora_alpha", 32)),
+            lora_dropout=float(peft_conf.get("lora_dropout", 0.05)),
+            target_modules=peft_conf.get("target_modules"),
+            allow_freeze_fallback=bool(peft_conf.get("allow_freeze_fallback", True)),
+        )
+    return apply_middle_layer_freeze(encoder, start_frac=start_frac, end_frac=end_frac)
 
 
 def merge_encoder_if_peft(encoder: nn.Module) -> nn.Module:
