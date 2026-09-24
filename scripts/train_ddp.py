@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import random
 import sys
@@ -234,6 +235,15 @@ def main():
             loss_ce = -(target * torch.log_softmax(logits.masked_fill(~mask, -1e4), -1)).sum(-1).mean()
             loss = (loss_rl + CE_WEIGHT * loss_ce) / GRAD_ACCUM + 0.0 * act.sum()
 
+            if not torch.isfinite(loss):
+                msg = (
+                    f"non-finite loss at epoch {epoch+1} step {n_batches+1}: "
+                    f"loss={loss.item()} reward={float(r.mean().item())} "
+                    f"lr={scheduler.get_last_lr()[0]:.2e} — aborting (LR too high / unstable)"
+                )
+                print(msg, flush=True)
+                raise RuntimeError(msg)
+
             scaler.scale(loss).backward()
             accum_step += 1
             if accum_step % GRAD_ACCUM == 0 or (b_idx + MICRO_BATCH) >= len(my_items):
@@ -252,6 +262,11 @@ def main():
                 step_loss = loss.item() * GRAD_ACCUM
                 step_r = r.mean().item()
                 lr0 = scheduler.get_last_lr()[0]
+                if not (math.isfinite(step_loss) and math.isfinite(step_r)):
+                    raise RuntimeError(
+                        f"non-finite metrics at epoch {epoch+1} step {n_batches}: "
+                        f"loss={step_loss} reward={step_r}"
+                    )
                 print(
                     f"  epoch {epoch+1}/{EPOCHS} step {n_batches} "
                     f"loss={step_loss:.4f} reward={step_r:.3f} "
