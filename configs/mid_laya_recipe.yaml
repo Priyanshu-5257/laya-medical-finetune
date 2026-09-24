@@ -1,0 +1,42 @@
+# Mid-scale Laya FT recipe: ~50k Q × 3 epochs (CE×1, sph=0.75, soft teacher).
+# Not full MedMCQA; aimed at ~2–4h on T4×2.
+model_id: convaiinnovations/laya
+max_len: 512
+head_max_len: 192
+
+wandb:
+  enabled: true
+  project: laya-medical
+  name: laya-recipe-50k-e3
+
+train:
+  medmcqa_n: 45000
+  mednli_n: 5000
+  seed: 20260923
+  epochs: 3
+  micro_batch: 8
+  grad_accum: 4
+  group_size: 4
+  lr_encoder: 2.5e-5
+  lr_head: 1.0e-4
+  sigma_start: 0.4
+  sigma_end: 0.1
+  ce_weight: 1.0
+  sph_weight: 0.75
+  rps_weight: 1.0
+  adv_normalize: batch
+  max_tokens_per_batch: 4096
+  calib_max: 1000
+  shuffle_options: true
+  log_every: 25
+  eval_every_epoch: true
+  soft_targets:
+    enabled: true
+    mix: 0.5
+    batch_size: 16
+
+eval:
+  generic_n_per_task: 400
+  medical_n_per_task: 400
+  generic_tasks: [ag_news, emotion]
+  medical_tasks: [pubmedqa, medqa]
