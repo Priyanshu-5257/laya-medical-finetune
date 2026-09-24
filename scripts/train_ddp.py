@@ -221,9 +221,13 @@ def main():
                     w_sph=W_SPH,
                     w_rps=W_RPS,
                 )
-                # Per-question group-mean baseline + group std (not batch-wide).
+                # Advantage baseline: group mean, then std (batch-wide = Laya notebook; group = per-q).
                 adv = r - r.mean(dim=0, keepdim=True)
-                adv = adv / (adv.std(dim=0, keepdim=True, unbiased=False) + 1e-6)
+                adv_mode = str(tconf.get("adv_normalize", "group")).lower()
+                if adv_mode in ("batch", "global", "laya"):
+                    adv = adv / (adv.std() + 1e-6)
+                else:
+                    adv = adv / (adv.std(dim=0, keepdim=True, unbiased=False) + 1e-6)
 
             logp = -(((z - logits.unsqueeze(0)) ** 2) * mask).sum(-1) / (2 * sigma**2)
             loss_rl = -(adv * logp).mean()

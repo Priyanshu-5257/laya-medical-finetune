@@ -404,6 +404,25 @@ def main():
     print(f"  mednli: {len(mednli)}")
     train_items.extend(mednli)
     random.Random(seed).shuffle(train_items)
+
+    soft_meta = {"enabled": False}
+    soft_conf = train_conf.get("soft_targets") or {}
+    if soft_conf.get("enabled"):
+        from laya_medical.soft_targets import apply_teacher_soft_targets
+
+        print(
+            f"Applying soft teacher targets (mix={soft_conf.get('mix', 0.5)}) "
+            f"from base model at {model_dir}...",
+            flush=True,
+        )
+        soft_meta = apply_teacher_soft_targets(
+            train_items,
+            model_dir,
+            mix=float(soft_conf.get("mix", 0.5)),
+            batch_size=int(soft_conf.get("batch_size", 16)),
+        )
+        print(f"  soft_targets: {soft_meta}", flush=True)
+
     train_path = os.path.join(args.out_dir, "train_items.pt")
     torch.save(train_items, train_path)
     print(f"Saved {len(train_items)} train items -> {train_path}")
@@ -442,6 +461,7 @@ def main():
         "cfg": cfg,
         "n_train": len(train_items),
         "train_sources": {"medmcqa": int(train_conf["medmcqa_n"]), "mednli": int(train_conf["mednli_n"])},
+        "soft_targets": soft_meta,
         "eval": {
             "generic": {k: len(v) for k, v in eval_packs["generic"].items()},
             "medical": {k: len(v) for k, v in eval_packs["medical"].items()},
