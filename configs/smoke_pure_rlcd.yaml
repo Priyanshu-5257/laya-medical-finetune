@@ -1,0 +1,33 @@
+# Smoke: pure RLCD control with fixed MedMCQA labels (fair A/B vs smoke_laya_recipe).
+# Same data/seed/batch/σ/adv as Laya-recipe smoke; only CE/sph/soft differ.
+model_id: convaiinnovations/laya
+max_len: 512
+head_max_len: 192
+
+train:
+  medmcqa_n: 4000
+  mednli_n: 1000
+  seed: 20260923
+  epochs: 1
+  micro_batch: 8
+  grad_accum: 4
+  group_size: 4
+  lr_encoder: 2.5e-5
+  lr_head: 1.0e-4
+  sigma_start: 0.4
+  sigma_end: 0.1
+  ce_weight: 0.0
+  sph_weight: 0.5
+  rps_weight: 1.0
+  adv_normalize: batch    # match Laya-recipe smoke / Laya notebook
+  max_tokens_per_batch: 4096
+  calib_max: 400
+  shuffle_options: true
+  soft_targets:
+    enabled: false
+
+eval:
+  generic_n_per_task: 400
+  medical_n_per_task: 400
+  generic_tasks: [ag_news, emotion]
+  medical_tasks: [pubmedqa, medqa]
