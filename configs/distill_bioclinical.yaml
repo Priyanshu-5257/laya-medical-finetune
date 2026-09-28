@@ -1,0 +1,20 @@
+# Head-only distillation of Laya onto BioClinical ModernBERT-large.
+# Teacher: frozen convaiinnovations/laya. Student encoder stays frozen.
+teacher_id: convaiinnovations/laya
+encoder_id: thomas-sounack/BioClinical-ModernBERT-large
+max_len: 512
+head_max_len: 192
+seed: 20260923
+freeze_encoder: true
+
+train:
+  epochs: 3
+  micro_batch: 8
+  grad_accum: 4
+  lr_head: 1.0e-4
+  weight_decay: 0.01
+  log_every: 25
+
+eval:
+  generic_n_per_task: 400
+  medical_n_per_task: 400
