@@ -10,7 +10,7 @@ from laya.common import ece_score
 
 
 @torch.no_grad()
-def eval_items(model, tok, items: List[Dict[str, Any]], device: torch.device, batch_size: int = 8) -> Dict[str, float]:
+def eval_items(model, tok, items: List[Dict[str, Any]], device: torch.device, batch_size: int = 8) -> Dict[str, Any]:
     # Local import avoids circular import with laya_medical.__init__.
     from laya_medical import collate_train_batch
 
@@ -20,6 +20,8 @@ def eval_items(model, tok, items: List[Dict[str, Any]], device: torch.device, ba
     confs = []
     nlls = []
     briers = []
+    labels_all = []
+    preds_all = []
     for i in range(0, len(items), batch_size):
         chunk = items[i : i + batch_size]
         batch = collate_train_batch(chunk, tok.pad_token_id)
@@ -46,12 +48,27 @@ def eval_items(model, tok, items: List[Dict[str, Any]], device: torch.device, ba
             t = target[j, :k].cpu().numpy()
             ok = float(y == int(pred[j].item()))
             correct.append(ok)
+            labels_all.append(y)
+            preds_all.append(int(pred[j].item()))
             confs.append(float(p.max()))
             nlls.append(float(-(np.log(max(p[y], 1e-12)))))
             briers.append(float(((p - t) ** 2).sum()))
+    n_classes = max(max(labels_all), max(preds_all)) + 1
+    label_counts = np.bincount(labels_all, minlength=n_classes)
+    pred_counts = np.bincount(preds_all, minlength=n_classes)
+    f1s = []
+    for cls in range(n_classes):
+        tp = sum(y == cls and p == cls for y, p in zip(labels_all, preds_all))
+        denom = int(label_counts[cls] + pred_counts[cls])
+        f1s.append(2 * tp / denom if denom else 0.0)
     return {
         "n": len(correct),
         "accuracy": float(np.mean(correct)),
+        "majority_accuracy": float(label_counts.max() / len(correct)),
+        # MCQ options may be shuffled, so this is F1 by option position, not semantic class.
+        "option_position_macro_f1": float(np.mean(f1s)),
+        "label_counts": label_counts.tolist(),
+        "pred_counts": pred_counts.tolist(),
         "ece": float(ece_score(np.asarray(confs), np.asarray(correct))),
         "nll": float(np.mean(nlls)),
         "brier": float(np.mean(briers)),
@@ -76,7 +93,7 @@ def flatten_eval_for_log(metrics: Dict[str, Any], prefix: str = "eval") -> Dict[
     for domain, tasks in metrics.items():
         for task, m in tasks.items():
             for k, v in m.items():
-                if k == "n":
+                if not isinstance(v, (int, float)) or k == "n":
                     continue
                 flat[f"{prefix}/{domain}/{task}/{k}"] = float(v)
     return flat

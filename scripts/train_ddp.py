@@ -19,6 +19,7 @@ from transformers import AutoTokenizer
 from laya.common import build_model, proper_reward
 from laya_medical import collate_train_batch, fit_one_temp, load_yaml
 from laya_medical.eval_metrics import eval_packs, flatten_eval_for_log
+from laya_medical.permutation import permute_choice_item
 from laya_medical.wandb_util import maybe_init_wandb, wandb_finish, wandb_log
 
 
@@ -30,8 +31,16 @@ def parse_args():
     ap.add_argument("--output-dir", required=True)
     ap.add_argument("--eval-packs", default=None, help="Optional dual-eval packs for per-epoch eval")
     ap.add_argument("--epochs", type=int, default=None)
+    ap.add_argument("--stop-after-epoch", type=int, default=None,
+                    help="Stop at this epoch while preserving the configured full schedule")
     ap.add_argument("--ce-weight", type=float, default=None)
+    ap.add_argument("--rlcd-weight", type=float, default=None)
     ap.add_argument("--group-size", type=int, default=None)
+    ap.add_argument("--seed", type=int, default=20260923)
+    ap.add_argument("--gradient-estimator", choices=("legacy", "loo", "pathwise"), default="legacy")
+    ap.add_argument("--permute-options", action="store_true")
+    ap.add_argument("--consistency-teacher-permuted", action="store_true")
+    ap.add_argument("--consistency-weight", type=float, default=0.0)
     return ap.parse_args()
 
 
@@ -69,6 +78,8 @@ def main():
     local_rank = int(os.environ.get("LOCAL_RANK", "0"))
     torch.cuda.set_device(local_rank)
     device = torch.device("cuda", local_rank)
+    torch.manual_seed(args.seed + rank)
+    noise_generator = torch.Generator(device=device).manual_seed(args.seed + 1000 + rank)
 
     with open(os.path.join(args.model_dir, "rl_agent_config.json")) as f:
         cfg = json.load(f)
@@ -81,6 +92,8 @@ def main():
     model = build_model(cfg, encoder_dir=os.path.join(args.model_dir, "encoder"))
     weights = load_file(os.path.join(args.model_dir, "model.safetensors"))
     model.load_state_dict(weights, strict=True)
+    if isinstance(cfg.get("temperature"), list):
+        model.temperature.copy_(torch.tensor(cfg["temperature"], dtype=torch.float32))
     model.encoder.gradient_checkpointing_enable(
         gradient_checkpointing_kwargs={"use_reentrant": False}
     )
@@ -99,6 +112,9 @@ def main():
     my_items = train_items[rank::world_size]
 
     EPOCHS = int(args.epochs if args.epochs is not None else tconf["epochs"])
+    STOP_AFTER = int(args.stop_after_epoch if args.stop_after_epoch is not None else EPOCHS)
+    if not 1 <= STOP_AFTER <= EPOCHS:
+        raise ValueError("stop-after-epoch must be in [1, epochs]")
     MICRO_BATCH = int(tconf["micro_batch"])
     GRAD_ACCUM = int(tconf["grad_accum"])
     GROUP_SIZE = int(args.group_size if args.group_size is not None else tconf["group_size"])
@@ -107,10 +123,20 @@ def main():
     SIGMA_START = float(tconf["sigma_start"])
     SIGMA_END = float(tconf["sigma_end"])
     CE_WEIGHT = float(args.ce_weight if args.ce_weight is not None else tconf.get("ce_weight", 0.0))
+    RLCD_WEIGHT = float(args.rlcd_weight if args.rlcd_weight is not None else tconf.get("rlcd_weight", 1.0))
+    if RLCD_WEIGHT < 0 or CE_WEIGHT < 0 or RLCD_WEIGHT + CE_WEIGHT <= 0:
+        raise ValueError("RLCD and CE weights must be nonnegative with at least one positive")
+    if args.gradient_estimator == "loo" and GROUP_SIZE < 2:
+        raise ValueError("leave-one-out baseline requires group size >= 2")
+    if args.consistency_weight < 0 or (args.consistency_weight > 0 and not args.permute_options):
+        raise ValueError("consistency weight must be nonnegative and requires option permutation")
+    if args.consistency_teacher_permuted and not (args.permute_options and args.consistency_weight > 0):
+        raise ValueError("permuted consistency teacher requires permutation and positive consistency weight")
     W_SPH = float(tconf.get("sph_weight", 0.5))
     W_RPS = float(tconf.get("rps_weight", 1.0))
     LOG_EVERY = int(tconf.get("log_every", 25))
     EVAL_EVERY_EPOCH = bool(tconf.get("eval_every_epoch", True))
+    SAVE_ROLLING = bool(tconf.get("save_rolling_checkpoint", True))
 
     eval_packs_path = args.eval_packs
     packs = None
@@ -136,8 +162,10 @@ def main():
         print(
             f"DDP world={world_size} | train={len(train_items)} "
             f"(calib holdout={len(calib_items)}) | per_rank={len(my_items)} | "
-            f"epochs={EPOCHS} | G={GROUP_SIZE} | ce_weight={CE_WEIGHT} | "
-            f"max_len={cfg['max_len']} | eval_every_epoch={EVAL_EVERY_EPOCH and packs is not None}",
+            f"epochs={EPOCHS} stop_after={STOP_AFTER} | G={GROUP_SIZE} | rlcd_weight={RLCD_WEIGHT} | ce_weight={CE_WEIGHT} | "
+            f"estimator={args.gradient_estimator} | permute={args.permute_options} | "
+            f"consistency={args.consistency_weight} teacher_permuted={args.consistency_teacher_permuted} | max_len={cfg['max_len']} | "
+            f"eval_every_epoch={EVAL_EVERY_EPOCH and packs is not None}",
             flush=True,
         )
         wb = maybe_init_wandb(
@@ -160,7 +188,9 @@ def main():
         )
         if packs is not None and EVAL_EVERY_EPOCH:
             print("Evaluating BASE checkpoint (once)...", flush=True)
+            model.eval()
             base_metrics = eval_packs(model, tok, packs, device)
+            model.train()
             wandb_log(
                 wb,
                 {
@@ -180,21 +210,61 @@ def main():
     t0 = time.time()
     history = []
     epoch_evals = []
-    for epoch in range(EPOCHS):
-        random.seed(42 + epoch + rank)
-        random.shuffle(my_items)
+    for epoch in range(STOP_AFTER):
+        random.Random(42 + (args.seed - 20260923) + epoch + rank).shuffle(my_items)
         epoch_loss, n_batches = 0.0, 0
         optimizer.zero_grad(set_to_none=True)
         accum_step = 0
         progress = epoch / max(1, EPOCHS - 1)
         sigma = SIGMA_START + (SIGMA_END - SIGMA_START) * progress
         reward_sum = 0.0
+        reward_spread_sum = 0.0
+        grad_norm_sum = 0.0
+        grad_norm_max = 0.0
+        grad_norm_count = 0
+        perm_rng = random.Random(args.seed + 5000 + epoch * 1009 + rank)
 
         for b_idx in range(0, len(my_items), MICRO_BATCH):
             chunk = my_items[b_idx : b_idx + MICRO_BATCH]
             if not chunk:
                 continue
-            batch = collate_train_batch(chunk, tok.pad_token_id)
+            if args.permute_options:
+                orders = []
+                perm_chunk = []
+                teacher_orders = []
+                teacher_chunk = []
+                for item in chunk:
+                    order = list(range(len(item["markers"])))
+                    perm_rng.shuffle(order)
+                    orders.append(order)
+                    perm_chunk.append(permute_choice_item(item, order, tok.sep_token_id))
+                    if args.consistency_teacher_permuted:
+                        teacher_order = list(range(len(item["markers"])))
+                        perm_rng.shuffle(teacher_order)
+                        teacher_orders.append(teacher_order)
+                        teacher_chunk.append(permute_choice_item(item, teacher_order, tok.sep_token_id))
+                    else:
+                        teacher_orders.append(list(range(len(item["markers"]))))
+                        teacher_chunk.append(item)
+                if args.consistency_weight > 0:
+                    model.eval()
+                    with torch.no_grad(), torch.autocast("cuda", dtype=torch.float16):
+                        orig_batch = collate_train_batch(teacher_chunk, tok.pad_token_id)
+                        orig_logits, _ = model(
+                            orig_batch["input_ids"].to(device),
+                            orig_batch["attention_mask"].to(device),
+                            orig_batch["marker_pos"].to(device),
+                            orig_batch["marker_mask"].to(device),
+                            orig_batch["qtype"].to(device),
+                        )
+                        orig_probs = torch.softmax(
+                            orig_logits.float().masked_fill(~orig_batch["marker_mask"].to(device), -1e4), -1
+                        ).detach()
+                    model.train()
+                chunk_for_step = perm_chunk
+            else:
+                chunk_for_step = chunk
+            batch = collate_train_batch(chunk_for_step, tok.pad_token_id)
             with torch.autocast("cuda", dtype=torch.float16):
                 logits, act = ddp_model(
                     batch["input_ids"].to(device),
@@ -208,32 +278,47 @@ def main():
             k = mask.sum(-1, keepdim=True).float().clamp(min=1.0)
             target = batch["target"].to(device)
 
-            eps = torch.randn((GROUP_SIZE,) + logits.shape, device=device) * sigma * mask
-            eps = (eps - eps.sum(-1, keepdim=True) / k) * mask
-            z = logits.detach().unsqueeze(0) + eps
-            q = torch.softmax(z.masked_fill(~mask, -1e4), -1)
-
-            with torch.no_grad():
+            if RLCD_WEIGHT > 0:
+                eps = torch.randn((GROUP_SIZE,) + logits.shape, device=device, generator=noise_generator) * sigma * mask
+                eps = (eps - eps.sum(-1, keepdim=True) / k) * mask
+                z = (logits if args.gradient_estimator == "pathwise" else logits.detach()).unsqueeze(0) + eps
+                q = torch.softmax(z.masked_fill(~mask, -1e4), -1)
                 r = proper_reward(
-                    q,
-                    target.unsqueeze(0),
-                    batch["qtype"].to(device),
-                    mask,
-                    w_sph=W_SPH,
-                    w_rps=W_RPS,
+                    q, target.unsqueeze(0), batch["qtype"].to(device), mask,
+                    w_sph=W_SPH, w_rps=W_RPS,
                 )
-                # Advantage baseline: group mean, then std (batch-wide = Laya notebook; group = per-q).
-                adv = r - r.mean(dim=0, keepdim=True)
-                adv_mode = str(tconf.get("adv_normalize", "group")).lower()
-                if adv_mode in ("batch", "global", "laya"):
-                    adv = adv / (adv.std() + 1e-6)
+                if args.gradient_estimator == "pathwise":
+                    loss_rl = -r.mean()
                 else:
-                    adv = adv / (adv.std(dim=0, keepdim=True, unbiased=False) + 1e-6)
-
-            logp = -(((z - logits.unsqueeze(0)) ** 2) * mask).sum(-1) / (2 * sigma**2)
-            loss_rl = -(adv * logp).mean()
+                    with torch.no_grad():
+                        adv = r - r.mean(dim=0, keepdim=True)
+                        if args.gradient_estimator == "legacy":
+                            adv_mode = str(tconf.get("adv_normalize", "group")).lower()
+                            if adv_mode in ("batch", "global", "laya"):
+                                adv = adv / (adv.std() + 1e-6)
+                            else:
+                                adv = adv / (adv.std(dim=0, keepdim=True, unbiased=False) + 1e-6)
+                        else:
+                            adv = adv * (GROUP_SIZE / (GROUP_SIZE - 1))
+                    logp = -(((z - logits.unsqueeze(0)) ** 2) * mask).sum(-1) / (2 * sigma**2)
+                    loss_rl = -(adv * logp).mean()
+            else:
+                loss_rl = logits.new_zeros(())
+                with torch.no_grad():
+                    q = torch.softmax(logits.masked_fill(~mask, -1e4), -1)
+                    r = proper_reward(q, target, batch["qtype"].to(device), mask,
+                                      w_sph=W_SPH, w_rps=W_RPS)
             loss_ce = -(target * torch.log_softmax(logits.masked_fill(~mask, -1e4), -1)).sum(-1).mean()
-            loss = (loss_rl + CE_WEIGHT * loss_ce) / GRAD_ACCUM + 0.0 * act.sum()
+            if args.consistency_weight > 0:
+                teacher = torch.zeros_like(target)
+                for j, order in enumerate(orders):
+                    teacher[j, :len(order)] = orig_probs[j, [teacher_orders[j].index(i) for i in order]]
+                log_student = torch.log_softmax(logits.masked_fill(~mask, -1e4), -1)
+                loss_consistency = (teacher * (teacher.clamp_min(1e-12).log() - log_student)).sum(-1).mean()
+            else:
+                loss_consistency = logits.new_zeros(())
+            loss = (RLCD_WEIGHT * loss_rl + CE_WEIGHT * loss_ce +
+                    args.consistency_weight * loss_consistency) / GRAD_ACCUM + 0.0 * act.sum()
 
             if not torch.isfinite(loss):
                 msg = (
@@ -248,15 +333,23 @@ def main():
             accum_step += 1
             if accum_step % GRAD_ACCUM == 0 or (b_idx + MICRO_BATCH) >= len(my_items):
                 scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(ddp_model.parameters(), 1.0)
+                grad_norm = float(torch.nn.utils.clip_grad_norm_(ddp_model.parameters(), 1.0))
+                if math.isfinite(grad_norm):
+                    grad_norm_sum += grad_norm
+                    grad_norm_max = max(grad_norm_max, grad_norm)
+                    grad_norm_count += 1
+                scale_before = scaler.get_scale()
                 scaler.step(optimizer)
                 scaler.update()
-                scheduler.step()
+                if scaler.get_scale() >= scale_before:
+                    scheduler.step()
                 optimizer.zero_grad(set_to_none=True)
                 global_step += 1
 
             epoch_loss += float(loss.item() * GRAD_ACCUM)
             reward_sum += float(r.mean().item())
+            if RLCD_WEIGHT > 0:
+                reward_spread_sum += float(r.detach().std(dim=0, unbiased=False).mean().item())
             n_batches += 1
             if rank == 0 and (n_batches % LOG_EVERY) == 0:
                 step_loss = loss.item() * GRAD_ACCUM
@@ -293,15 +386,20 @@ def main():
                 f"| avg_loss={avg_loss:.4f} | avg_reward={avg_r:.3f} ===",
                 flush=True,
             )
-            hist_row = {"epoch": epoch + 1, "avg_loss": avg_loss, "avg_reward": avg_r}
-            ckpt_dir = os.path.join(args.output_dir, "checkpoint_latest")
-            os.makedirs(ckpt_dir, exist_ok=True)
-            sd = {k: v.half().contiguous().cpu() for k, v in model.state_dict().items()}
-            save_file(sd, os.path.join(ckpt_dir, "model.safetensors"))
-            model.encoder.config.save_pretrained(os.path.join(ckpt_dir, "encoder"))
-            tok.save_pretrained(os.path.join(ckpt_dir, "tokenizer"))
-            with open(os.path.join(ckpt_dir, "checkpoint_meta.json"), "w") as f:
-                json.dump({"epoch": epoch + 1, "total_epochs": EPOCHS, "avg_loss": avg_loss}, f, indent=2)
+            hist_row = {"epoch": epoch + 1, "avg_loss": avg_loss, "avg_reward": avg_r,
+                        "reward_spread": reward_spread_sum / max(1, n_batches),
+                        "grad_norm_preclip_mean": grad_norm_sum / max(1, grad_norm_count),
+                        "grad_norm_preclip_max": grad_norm_max,
+                        "grad_norm_observations": grad_norm_count}
+            if SAVE_ROLLING:
+                ckpt_dir = os.path.join(args.output_dir, "checkpoint_latest")
+                os.makedirs(ckpt_dir, exist_ok=True)
+                sd = {k: v.half().contiguous().cpu() for k, v in model.state_dict().items()}
+                save_file(sd, os.path.join(ckpt_dir, "model.safetensors"))
+                model.encoder.config.save_pretrained(os.path.join(ckpt_dir, "encoder"))
+                tok.save_pretrained(os.path.join(ckpt_dir, "tokenizer"))
+                with open(os.path.join(ckpt_dir, "checkpoint_meta.json"), "w") as f:
+                    json.dump({"epoch": epoch + 1, "total_epochs": EPOCHS, "avg_loss": avg_loss}, f, indent=2)
 
             if packs is not None and EVAL_EVERY_EPOCH:
                 print(f"=== dual eval after epoch {epoch+1} ===", flush=True)
@@ -406,8 +504,14 @@ def main():
                     "n_calib": len(calib_items),
                     "world_size": world_size,
                     "ce_weight": CE_WEIGHT,
+                    "rlcd_weight": RLCD_WEIGHT,
                     "group_size": GROUP_SIZE,
                     "epochs": EPOCHS,
+                    "stop_after_epoch": STOP_AFTER,
+                    "gradient_estimator": args.gradient_estimator,
+                    "permute_options": args.permute_options,
+                    "consistency_weight": args.consistency_weight,
+                    "consistency_teacher_permuted": args.consistency_teacher_permuted,
                 },
                 f,
                 indent=2,

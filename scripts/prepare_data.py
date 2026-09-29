@@ -41,9 +41,9 @@ def _cap_reached(out_len: int, n: int) -> bool:
     return n > 0 and out_len >= n
 
 
-def build_medmcqa_items(tok, cfg: Dict, n: int, seed: int, shuffle_options: bool) -> List[Dict]:
+def build_medmcqa_items(tok, cfg: Dict, n: int, seed: int, shuffle_options: bool, split: str = "train") -> List[Dict]:
     # openlifescienceai/medmcqa: cop is ClassLabel 0–3 (a,b,c,d). Do NOT dual-map 1-based.
-    ds = load_dataset("openlifescienceai/medmcqa", split="train")
+    ds = load_dataset("openlifescienceai/medmcqa", split=split)
     print(
         f"medmcqa cop scheme: fixed ClassLabel 0–3 → A,B,C,D | "
         f"requested_n={'all' if n <= 0 else n} (pool={len(ds)})",
@@ -198,8 +198,8 @@ def build_mednli_items(tok, cfg: Dict, n: int, seed: int, shuffle_options: bool,
     return out
 
 
-def build_ag_news_items(tok, cfg: Dict, n: int, seed: int) -> List[Dict]:
-    ds = load_dataset("fancyzhx/ag_news", split="test")
+def build_ag_news_items(tok, cfg: Dict, n: int, seed: int, split: str = "test") -> List[Dict]:
+    ds = load_dataset("fancyzhx/ag_news", split=split)
     rows = _subsample(list(ds), n, seed)
     labels = ["World", "Sports", "Business", "Sci/Tech"]
     out = []
@@ -224,11 +224,11 @@ def build_ag_news_items(tok, cfg: Dict, n: int, seed: int) -> List[Dict]:
     return out
 
 
-def build_emotion_items(tok, cfg: Dict, n: int, seed: int) -> List[Dict]:
+def build_emotion_items(tok, cfg: Dict, n: int, seed: int, split: str = "test") -> List[Dict]:
     try:
-        ds = load_dataset("dair-ai/emotion", "split", split="test")
+        ds = load_dataset("dair-ai/emotion", "split", split=split)
     except Exception:
-        ds = load_dataset("dair-ai/emotion", split="test")
+        ds = load_dataset("dair-ai/emotion", split=split)
     rows = _subsample(list(ds), n, seed)
     names = ["sadness", "joy", "love", "anger", "fear", "surprise"]
     out = []
@@ -311,7 +311,10 @@ def build_medqa_items(tok, cfg: Dict, n: int, seed: int) -> List[Dict]:
     for row in rows:
         question = row.get("question") or row.get("question_text") or ""
         options = row.get("options") or row.get("choices") or {}
-        answer = row.get("answer") or row.get("answer_idx") or row.get("answer_id")
+        answer_idx = row.get("answer_idx")
+        if answer_idx is None or answer_idx == "":
+            answer_idx = row.get("answer_id")
+        answer_text = row.get("answer")
         if isinstance(options, dict):
             criteria = {str(k): str(v) for k, v in options.items()}
             keys = list(criteria.keys())
@@ -332,21 +335,17 @@ def build_medqa_items(tok, cfg: Dict, n: int, seed: int) -> List[Dict]:
             continue
         if len(keys) < 2:
             continue
-        if isinstance(answer, int):
-            label_key = keys[max(0, min(answer, len(keys) - 1))]
+        if isinstance(answer_idx, int) and 0 <= answer_idx < len(keys):
+            label_key = keys[answer_idx]
+        elif answer_idx is not None and str(answer_idx).strip() in criteria:
+            label_key = str(answer_idx).strip()
         else:
-            answer_s = str(answer).strip()
-            if answer_s in criteria:
-                label_key = answer_s
-            else:
-                # match by option text
-                label_key = None
-                for k, v in criteria.items():
-                    if answer_s.lower() in v.lower() or v.lower() in answer_s.lower():
-                        label_key = k
-                        break
-                if label_key is None:
-                    continue
+            # Some mirrors omit answer_idx; an exact option-text match is safe.
+            answer_s = str(answer_text or "").strip().casefold()
+            matching = [k for k, v in criteria.items() if v.strip().casefold() == answer_s]
+            if len(matching) != 1:
+                continue
+            label_key = matching[0]
         target = one_hot(len(keys), keys.index(label_key))
         it = tokenize_item(
             tok,

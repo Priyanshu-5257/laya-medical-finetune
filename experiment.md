@@ -64,6 +64,82 @@ PubMedQA fell to 0.33 (−20pp) and MedQA to 0.26 (−2pp). The medical pretrain
 
 The in-loop medical-smoke deltas in `train_history` are relative to the distilled student, not to base Laya. The table above is the offline eval against base Laya.
 
+### BioClinical alignment v2 (28 September 2026)
+
+[Private Kaggle run](https://www.kaggle.com/code/aivenger1st/laya-medical-bioclinical-v2). This corrected the distillation path: the BioClinical encoder received gradients (`detach_encoder=false`), with LR 5e-6 while the head used 1e-4; train examples combined 6k typed-decisions questions with 4k AG News and 4k Emotion questions from their **train** splits. Targets mixed the base Laya distribution with gold labels 50:50. Held-out typed-decisions test, generic test, PubMedQA, and MedQA were used for evaluation. Tokenizer identity and full encoder/head weight coverage were checked. The 3-epoch alignment took 2,839 seconds; CE fell 0.891 → 0.679. The checkpoint passed the pre-medical gate.
+
+| Stage | Generic acc | Medical acc | Typed-decisions test acc | Generic NLL / ECE | Medical NLL / ECE |
+|---|---:|---:|---:|---:|---:|
+| Base Laya | 0.7713 | 0.4050 | 0.3635 | 0.805 / 0.111 | 1.526 / 0.246 |
+| After alignment | **0.8550** | 0.4263 | 0.5290 | **0.456 / 0.076** | **1.180 / 0.103** |
+| After 1-epoch medical RLCD smoke | 0.8488 | 0.4288 | — | 1.395 / 0.590 | 1.230 / 0.121 |
+
+The medical smoke gained only **0.25pp** over the aligned checkpoint while generic accuracy fell **0.63pp**. More concerning, generic NLL rose from 0.456 to 1.395 and ECE from 0.076 to 0.590. MedQA accuracy stayed at 0.280 versus base Laya. PubMedQA accuracy rose from 0.530 to 0.578, but **0.578 is exactly the majority-class accuracy of this 400-item sample** (231 yes, 131 no, 38 maybe); MedQA's majority-class accuracy is 0.273. Aggregate accuracy alone therefore does not establish useful medical learning. The corrected swap is much better than v1 but does not beat the plain Laya full fine-tune's 0.463 medical peak. Keep the aligned checkpoint as the stronger v2 artifact and diagnose medical-stage calibration before a longer medical run. The 800-case medical evaluation is too small to establish a small gain reliably.
+
+The Kaggle log also showed that fp16 gradient scaling skipped an optimizer step while the cosine scheduler advanced. The scheduler guards in `distill_ddp.py` and `train_ddp.py` were fixed after this run; the v2 results above used the earlier code.
+
+RLCD implementation check: the noisy logits, proper-score reward, group baseline, detached action, and Gaussian log-probability gradient in `train_ddp.py` match Laya's published fine-tuning notebook. The medical smoke differed materially in its training recipe: hard one-hot targets, `ce_weight=0`, `sph_weight=0.5`, and one epoch at constant σ=0.4. Laya's notebook used soft targets, CE weight 1, spherical weight 0.75, and four epochs with σ decreasing toward 0.1. This smoke included 4,600 training examples after the calibration holdout, roughly 72 optimizer updates per rank. MedNLI contributed the intended 1,000 examples with all three labels represented; the label loader was not the failure mode in this run.
+
+### Medical objective comparison (29 September 2026)
+
+[Private Kaggle run](https://www.kaggle.com/code/aivenger1st/laya-medical-objective-compare), 2×T4. All arms started from the same aligned BioClinical v2 checkpoint and used the same 4k MedMCQA + 1k MedNLI training sample, 3 epochs, encoder LR 5e-6, head LR 1e-4, and seed. Only the medical loss changed: pure RLCD, RLCD + CE, or CE only. Selection used final-epoch accuracy on 400 MedMCQA validation and 400 MedNLI dev items, with a generic accuracy-drop limit of 3pp. The 400 PubMedQA and 400 MedQA items were reported separately; these test samples had already been examined in earlier experiments, so they are not a pristine final test.
+
+| Medical objective | Medical dev acc | PubMedQA | MedQA | Medical test acc | Generic test acc |
+|---|---:|---:|---:|---:|---:|
+| Aligned checkpoint (before medical training) | 0.2788 | 0.5775 | 0.2675 | 0.4225 | 0.8550 |
+| Pure RLCD | **0.3138** | **0.6050** | 0.3000 | **0.4525** | 0.8563 |
+| RLCD + CE | 0.3050 | 0.4250 | **0.3100** | 0.3675 | **0.8625** |
+| CE only | 0.3038 | **0.6050** | 0.2900 | 0.4475 | 0.8463 |
+
+Pure RLCD won the prespecified dev accuracy rule and had the highest medical test accuracy. Its advantage over CE only was just 8/800 dev items and 4/800 test items, so this run does not establish a reliable superiority of RLCD. The simple majority baselines were 0.3025 on medical dev and 0.4225 on medical test; even the best arm was only 1.13pp and 3.00pp above them. MedNLI dev accuracy stayed below that sample's majority baseline in every arm. None of the models predicted PubMedQA's `maybe` class (38/400 cases). RLCD + CE became heavily biased toward `no` on PubMedQA, explaining its test collapse despite the highest MedQA score.
+
+Probability quality also regressed: the aligned checkpoint had medical NLL 1.182 after correcting MedQA labels and generic NLL/ECE 0.456/0.076 on the test pack; pure RLCD ended at medical NLL 1.226 and generic NLL/ECE 1.022/0.467. CE only had the best medical test NLL of the three arms (1.218), but this was still worse than the aligned checkpoint. These data support pure RLCD as the exploratory accuracy choice, while the aligned checkpoint remains preferable when calibrated probabilities matter. The original [machine-readable comparison](results/medical_objective_comparison.json) retains the pre-audit scores; the corrected MedQA scores are in [corrected_medqa_scores.json](results/corrected_medqa_scores.json).
+
+### Evaluation pipeline audit (29 September 2026)
+
+[Private Kaggle audit](https://www.kaggle.com/code/aivenger1st/laya-medical-eval-audit) rebuilt all four 400-item medical packs from the source datasets. For MedMCQA validation, MedNLI dev, and PubMedQA, all 400 inputs and gold labels matched the saved packs and source rows. For MedQA, all inputs matched, but **3/400 saved gold labels were wrong**: the builder preferred answer text and accepted a substring match even though the dataset supplies `answer_idx`. The builder now uses `answer_idx`, with an exact answer-text fallback. The table above includes the corrected MedQA scores. The starting checkpoint's original *dev* baseline was also evaluated with dropout on; corrected eval-mode MedMCQA/MedNLI accuracy is 0.2725/0.2850 (0.2788 combined). The trained arms' per-epoch dev scores already used eval mode. `train_ddp.py` now switches to eval mode for its starting baseline as well.
+
+No MedMCQA or MedNLI dev state was truncated, and all options remained distinct. State text was truncated in 14/400 PubMedQA and 3/400 MedQA items; no option text was truncated. The PubMedQA sample mixes **201 official test** and **199 development** items, confirmed against the [official test IDs](https://github.com/pubmedqa/pubmedqa/blob/master/data/test_ground_truth.json). It cannot be compared directly with published fixed-test scores.
+
+Option order has a much larger effect than these rare truncations. When option token spans were reversed and predictions mapped back to their original answers, pure RLCD changed its selected answer on **47.8%** of MedMCQA, **63.0%** of MedNLI, **27.5%** of PubMedQA, and **44.5%** of MedQA items. MedMCQA accuracy changed from 0.3025 to 0.3450 under reversal on the *same questions*. This is evidence of a substantial presentation/position sensitivity; the audit report records the corresponding aligned-checkpoint rates and second permutation. No training occurred in this audit.
+
+### RLCD gradient and option-order experiment (29 September 2026)
+
+[Private Kaggle run](https://www.kaggle.com/code/aivenger1st/laya-medical-gradient-compare), 2×T4. Three arms train from the same aligned BioClinical checkpoint, on the same 4k MedMCQA + 1k MedNLI sample and three-epoch budget: the previous normalized score-function estimator, an unnormalized leave-one-out score-function estimator, and a pathwise gradient through the same noisy proper-score reward. With group size four, subtracting the group mean including the sampled reward scales the unnormalized expected score-function gradient by 3/4; the leave-one-out arm corrects this factor. Batch-wide advantage standardization changes the gradient scale as reward spread changes, while the pathwise arm directly differentiates the Gaussian-smoothed expected reward. These arms test estimator behavior rather than new medical data.
+
+The best estimator was selected on the 800-item MedMCQA validation + MedNLI dev pack, subject to at most a three percentage point generic accuracy drop, with dev NLL as tie-breaker. A fourth arm started again from the same checkpoint and used the selected estimator with a fresh option permutation for each training item and a 0.1-weight teacher/student consistency KL. External PubMedQA and corrected MedQA scores were reported after selection. The option-order audit compared answer changes under reversal and rotation on the two dev tasks. [Machine-readable results](results/gradient_comparison.json) are tracked in the repo; the full Kaggle log remains in local ignored artifacts.
+
+| Arm, final epoch | Medical dev | MedMCQA dev | MedNLI dev | PubMedQA | MedQA, corrected | Medical external | Generic external |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Aligned checkpoint | 0.2800 | 0.2725 | 0.2875 | 0.5775 | 0.2675 | 0.4225 | 0.8550 |
+| Legacy normalized RLCD | 0.3013 | 0.2950 | 0.3075 | 0.3275 | 0.3000 | 0.3138 | 0.8550 |
+| Leave-one-out RLCD | 0.3038 | 0.3000 | 0.3075 | **0.6050** | 0.2925 | 0.4488 | 0.8613 |
+| **Pathwise RLCD** | **0.3463** | **0.3375** | **0.3550** | 0.6000 | **0.3000** | **0.4500** | 0.8525 |
+| Pathwise + option permutation + consistency | 0.3238 | 0.3050 | 0.3425 | 0.5775 | 0.2975 | 0.4375 | **0.8650** |
+
+Pathwise won the specified final-epoch dev rule by 4.25pp over leave-one-out (34 more correct of 800), with generic accuracy 0.25pp below the aligned checkpoint. Its best medical dev epoch was **0.3588 at epoch 2**, followed by 0.3463 at epoch 3. Leave-one-out also peaked at epoch 2 (0.3200) and fell to 0.3038. On the external medical sample, pathwise exceeded leave-one-out by just **1/800** and the previously run pure RLCD checkpoint by **−2/800**; this is no evidence of a meaningful transfer improvement. All three improved estimators stayed near the external sample's 0.4225 majority baseline. Pathwise medical external NLL was 1.214 versus 1.225 for leave-one-out and 1.233 for legacy, but the aligned checkpoint's NLL remained lower at about 1.182. The external sample has been examined in earlier experiments and is not a pristine final test.
+
+The legacy estimator's pre-clip gradient norm rose from 5.6 to **74.1** across the σ=0.4→0.1 schedule; leave-one-out rose from 3.6 to 7.7, while pathwise stayed in the 9.0–14.3 range. This supports the predicted scale instability from reward standardization as σ shrinks. It does not by itself prove which change caused the accuracy difference, because estimator choice also changes update direction and magnitude. The legacy arm's PubMedQA accuracy collapsed to 0.3275 here, despite the previous pure RLCD run reaching 0.6050 under a different random stream, another sign that the 5k-example RLCD outcome is unstable.
+
+Option permutation + consistency improved generic external accuracy to 0.8650 and generic NLL to 0.674 (pathwise without it: 0.8525 and 0.903), but reduced medical dev accuracy by 2.25pp and external medical accuracy by 1.25pp. It reduced the reverse-order semantic flip rate on MedMCQA from pathwise 47.8% to 38.3%, and on MedNLI from 84.5% to 60.0%. These rates are still high. In particular, pathwise MedNLI accuracy changed from about 35.8% in original order to 46.0% after rotation on the same 400 cases; the decision interface remains strongly order sensitive. The permutation arm helps stability but is not the accuracy winner at this budget and consistency weight.
+
+### Pathwise epoch-2 and two-view follow-up (29 September 2026)
+
+[Private Kaggle run](https://www.kaggle.com/code/aivenger1st/laya-medical-pathwise-followup), 2×T4. This follow-up fixes the stopping point at epoch 2 of the same three-epoch learning-rate and noise schedule (σ=0.4 then 0.25), because the preceding run peaked there. It compares pathwise RLCD with a two-view option-order arm at seeds 20260923 and 20260924. Each pair starts from the same aligned checkpoint and uses the same 5k medical sample, calibration holdout, dev packs, and external packs. The second seed varies model dropout, Gaussian reward noise, training order, and option shuffles. In the two-view arm, independent random teacher and student option orders are sampled for each item; the student receives pathwise RLCD plus a 0.5-weight teacher/student consistency KL after mapping probabilities back to semantic options. The control has pathwise RLCD alone. Results pending Kaggle completion.
+
+### Published benchmark context
+
+These are published scores on the named benchmarks, **not scores on our exact sampled items or with our Laya prompt**. They provide a scale for interpreting the gap, not a direct model ranking.
+
+| Task | Our best (sample) | Biomedical encoder example | Larger model example |
+|---|---:|---:|---:|
+| PubMedQA | 60.5% (400) | BioLinkBERT-large 72.2% ([model card](https://huggingface.co/michiyasunaga/BioLinkBERT-large)) | Med-PaLM 2 81.8% ([paper](https://pmc.ncbi.nlm.nih.gov/articles/PMC11922739/)) |
+| MedQA, 4 options | 31.0% (400, corrected labels) | BioLinkBERT-large 44.6% ([model card](https://huggingface.co/michiyasunaga/BioLinkBERT-large)) | MedGemma 27B Text 87.7%; Med-Gemini 91.1% ([Google Research](https://research.google/blog/medgemma-our-most-capable-open-models-for-health-ai-development/), [Med-Gemini report](https://research.google/blog/advancing-medical-ai-with-med-gemini/)) |
+| MedMCQA validation | 30.25% (400) | PubMedBERT 40% without retrieval, 43% with PubMed retrieval ([dataset paper](https://proceedings.mlr.press/v174/pal22a/pal22a.pdf)) | Med-PaLM 2 72.3% ([paper](https://pmc.ncbi.nlm.nih.gov/articles/PMC11922739/)) |
+| MedNLI dev | 32.5% (400) | Bio+Clinical BERT 82.7% on the **test** split ([paper](https://aclanthology.org/W19-1909/)) | — |
+
+The PubMedQA comparison has a particularly important split mismatch: our builder samples 400 from all 1,000 `pqa_labeled` items, whereas the [benchmark's official preparation](https://github.com/pubmedqa/pubmedqa/blob/master/preprocess/split_dataset.py) reserves 500 items for test and uses the other 500 for train/development. Our model did not train on PubMedQA labels, but the published figures are still not evaluated on the same rows. MedNLI dev is another split mismatch; the Bio+Clinical BERT result uses test. Our medical training uses only 4k MedMCQA and 1k MedNLI items, while published task-specific encoders generally train on the full task data. The near-chance MedNLI result and MedQA result near the 25% four-choice chance level are stronger evidence of a weak medical decision interface than the aggregate medical accuracy alone.
+
 ## What the results support
 
 - The starting Laya encoder is not a medical model. Full encoder RLCD on MedMCQA/MedNLI still helps: best held-out medical gain so far is **+5.6pp** at epoch 3 of the full pure-RLCD run, with generic accuracy held.

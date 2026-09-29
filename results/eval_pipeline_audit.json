@@ -1,0 +1,312 @@
+{
+  "config": {
+    "max_len": 512,
+    "head_max_len": 192
+  },
+  "data": {
+    "medmcqa_val": {
+      "n": 400,
+      "exact_pack_matches": 400,
+      "input_pack_matches": 400,
+      "target_pack_matches": 400,
+      "source_found": 400,
+      "source_key_unique": 400,
+      "gold_matches_source": 400,
+      "state_truncated": 0,
+      "tokens_lost_total": 0,
+      "tokens_lost_max": 0,
+      "all_options_present": 400,
+      "options_distinct": 400,
+      "options_token_truncated": 0,
+      "gold_option_truncated": 0,
+      "option_tokens_lost_total": 0,
+      "full_length_p50": 74,
+      "full_length_p95": 112
+    },
+    "mednli_dev": {
+      "n": 400,
+      "exact_pack_matches": 400,
+      "input_pack_matches": 400,
+      "target_pack_matches": 400,
+      "source_found": 400,
+      "source_key_unique": 400,
+      "gold_matches_source": 400,
+      "state_truncated": 0,
+      "tokens_lost_total": 0,
+      "tokens_lost_max": 0,
+      "all_options_present": 400,
+      "options_distinct": 400,
+      "options_token_truncated": 0,
+      "gold_option_truncated": 0,
+      "option_tokens_lost_total": 0,
+      "full_length_p50": 82,
+      "full_length_p95": 131
+    },
+    "pubmedqa": {
+      "n": 400,
+      "exact_pack_matches": 400,
+      "input_pack_matches": 400,
+      "target_pack_matches": 400,
+      "source_found": 400,
+      "source_key_unique": 400,
+      "gold_matches_source": 400,
+      "state_truncated": 14,
+      "tokens_lost_total": 1047,
+      "tokens_lost_max": 233,
+      "all_options_present": 400,
+      "options_distinct": 400,
+      "options_token_truncated": 0,
+      "gold_option_truncated": 0,
+      "option_tokens_lost_total": 0,
+      "full_length_p50": 345,
+      "full_length_p95": 490,
+      "official_test_overlap": 201,
+      "official_development_overlap": 199,
+      "official_test_size": 500
+    },
+    "medqa": {
+      "n": 400,
+      "exact_pack_matches": 397,
+      "input_pack_matches": 400,
+      "target_pack_matches": 397,
+      "source_found": 400,
+      "source_key_unique": 400,
+      "gold_matches_source": 400,
+      "state_truncated": 3,
+      "tokens_lost_total": 145,
+      "tokens_lost_max": 96,
+      "all_options_present": 400,
+      "options_distinct": 400,
+      "options_token_truncated": 0,
+      "gold_option_truncated": 0,
+      "option_tokens_lost_total": 0,
+      "full_length_p50": 214,
+      "full_length_p95": 376
+    }
+  },
+  "permutation": {
+    "aligned": {
+      "medmcqa_val": {
+        "n": 400,
+        "original_accuracy": 0.2725,
+        "original_pred_positions": {
+          "0": 312,
+          "2": 27,
+          "3": 34,
+          "1": 27
+        },
+        "reverse": {
+          "accuracy": 0.255,
+          "semantic_flip_rate": 0.86,
+          "pred_positions": {
+            "0": 331,
+            "2": 17,
+            "3": 18,
+            "1": 34
+          }
+        },
+        "rotate": {
+          "accuracy": 0.2925,
+          "semantic_flip_rate": 0.835,
+          "pred_positions": {
+            "1": 22,
+            "0": 329,
+            "2": 29,
+            "3": 20
+          }
+        }
+      },
+      "mednli_dev": {
+        "n": 400,
+        "original_accuracy": 0.285,
+        "original_pred_positions": {
+          "2": 62,
+          "0": 289,
+          "1": 49
+        },
+        "reverse": {
+          "accuracy": 0.3475,
+          "semantic_flip_rate": 0.645,
+          "pred_positions": {
+            "0": 264,
+            "2": 72,
+            "1": 64
+          }
+        },
+        "rotate": {
+          "accuracy": 0.345,
+          "semantic_flip_rate": 0.6675,
+          "pred_positions": {
+            "0": 276,
+            "2": 79,
+            "1": 45
+          }
+        }
+      },
+      "pubmedqa": {
+        "n": 400,
+        "original_accuracy": 0.5775,
+        "original_pred_positions": {
+          "0": 400
+        },
+        "reverse": {
+          "accuracy": 0.58,
+          "semantic_flip_rate": 0.0025,
+          "pred_positions": {
+            "2": 399,
+            "1": 1
+          }
+        },
+        "rotate": {
+          "accuracy": 0.4625,
+          "semantic_flip_rate": 0.755,
+          "pred_positions": {
+            "0": 302,
+            "2": 98
+          }
+        }
+      },
+      "medqa": {
+        "n": 400,
+        "original_accuracy": 0.2675,
+        "original_pred_positions": {
+          "0": 394,
+          "1": 4,
+          "2": 2
+        },
+        "reverse": {
+          "accuracy": 0.25,
+          "semantic_flip_rate": 0.8925,
+          "pred_positions": {
+            "0": 333,
+            "3": 40,
+            "2": 16,
+            "1": 11
+          }
+        },
+        "rotate": {
+          "accuracy": 0.31,
+          "semantic_flip_rate": 0.5925,
+          "pred_positions": {
+            "0": 227,
+            "3": 158,
+            "1": 11,
+            "2": 4
+          }
+        }
+      }
+    },
+    "pure_rlcd": {
+      "medmcqa_val": {
+        "n": 400,
+        "original_accuracy": 0.3025,
+        "original_pred_positions": {
+          "0": 82,
+          "1": 127,
+          "3": 95,
+          "2": 96
+        },
+        "reverse": {
+          "accuracy": 0.345,
+          "semantic_flip_rate": 0.4775,
+          "pred_positions": {
+            "1": 120,
+            "2": 107,
+            "0": 75,
+            "3": 98
+          }
+        },
+        "rotate": {
+          "accuracy": 0.3075,
+          "semantic_flip_rate": 0.4075,
+          "pred_positions": {
+            "0": 89,
+            "1": 115,
+            "3": 94,
+            "2": 102
+          }
+        }
+      },
+      "mednli_dev": {
+        "n": 400,
+        "original_accuracy": 0.325,
+        "original_pred_positions": {
+          "2": 184,
+          "1": 204,
+          "0": 12
+        },
+        "reverse": {
+          "accuracy": 0.345,
+          "semantic_flip_rate": 0.63,
+          "pred_positions": {
+            "2": 191,
+            "1": 205,
+            "0": 4
+          }
+        },
+        "rotate": {
+          "accuracy": 0.335,
+          "semantic_flip_rate": 0.6075,
+          "pred_positions": {
+            "2": 196,
+            "1": 196,
+            "0": 8
+          }
+        }
+      },
+      "pubmedqa": {
+        "n": 400,
+        "original_accuracy": 0.605,
+        "original_pred_positions": {
+          "0": 288,
+          "1": 112
+        },
+        "reverse": {
+          "accuracy": 0.5825,
+          "semantic_flip_rate": 0.275,
+          "pred_positions": {
+            "2": 398,
+            "1": 2
+          }
+        },
+        "rotate": {
+          "accuracy": 0.5775,
+          "semantic_flip_rate": 0.28,
+          "pred_positions": {
+            "2": 400
+          }
+        }
+      },
+      "medqa": {
+        "n": 400,
+        "original_accuracy": 0.3,
+        "original_pred_positions": {
+          "1": 219,
+          "3": 43,
+          "2": 59,
+          "0": 79
+        },
+        "reverse": {
+          "accuracy": 0.3025,
+          "semantic_flip_rate": 0.445,
+          "pred_positions": {
+            "2": 141,
+            "0": 77,
+            "3": 134,
+            "1": 48
+          }
+        },
+        "rotate": {
+          "accuracy": 0.2775,
+          "semantic_flip_rate": 0.415,
+          "pred_positions": {
+            "2": 59,
+            "0": 139,
+            "1": 94,
+            "3": 108
+          }
+        }
+      }
+    }
+  }
+}

@@ -6,6 +6,7 @@ import os
 from typing import Any, Dict
 
 from safetensors.torch import load_file
+from transformers import AutoTokenizer
 
 from laya.common import build_model
 
@@ -28,6 +29,13 @@ def load_bioclinical_student(laya_dir: str, bio_dir: str):
         cfg: Dict[str, Any] = json.load(f)
     cfg["encoder"] = "thomas-sounack/BioClinical-ModernBERT-large"
     cfg["encoder_swap"] = "bioclinical_modernbert_large"
+    teacher_tok = AutoTokenizer.from_pretrained(os.path.join(laya_dir, "tokenizer"))
+    bio_tok = AutoTokenizer.from_pretrained(bio_dir)
+    if teacher_tok.get_vocab() != bio_tok.get_vocab() or any(
+        getattr(teacher_tok, name) != getattr(bio_tok, name)
+        for name in ("pad_token_id", "mask_token_id", "cls_token_id", "sep_token_id")
+    ):
+        raise ValueError("BioClinical and Laya token IDs differ; shared tokenized items are unsafe")
     model = build_model(cfg, encoder_dir=bio_dir)
     laya_sd = load_file(os.path.join(laya_dir, "model.safetensors"))
     head_sd = {k: v for k, v in laya_sd.items() if not k.startswith("encoder.")}
@@ -54,7 +62,7 @@ def load_bioclinical_student(laya_dir: str, bio_dir: str):
         "unexpected_head": list(unexpected_head)[:8],
         "unexpected_enc": list(unexpected_enc)[:8],
     }
-    if covered < max(1, int(0.95 * len(enc_names))):
+    if covered != len(enc_names) or info["missing_head"] or info["unexpected_head"]:
         raise RuntimeError(f"BioClinical encoder load incomplete: {info}")
     return model, cfg, info
 

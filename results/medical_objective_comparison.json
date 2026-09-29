@@ -1,0 +1,498 @@
+{
+  "selection_rule": "Highest combined MedMCQA-validation + MedNLI-dev accuracy at epoch 3, with generic accuracy drop <= 3 percentage points; dev NLL breaks ties. External test packs are reported, not used for selection.",
+  "winner": "pure_rlcd",
+  "arms": {
+    "pure_rlcd": {
+      "epochs": 3,
+      "rlcd_weight": 1.0,
+      "ce_weight": 0.0,
+      "dev_medical": {
+        "medmcqa_val": {
+          "n": 400,
+          "accuracy": 0.3025,
+          "nll": 1.3697390906512736,
+          "brier": 0.7414736306667328,
+          "ece": 0.014704515263438238,
+          "majority_accuracy": 0.2775
+        },
+        "mednli_dev": {
+          "n": 400,
+          "accuracy": 0.325,
+          "nll": 1.0995106756687165,
+          "brier": 0.667269429564476,
+          "ece": 0.026665853559970865,
+          "majority_accuracy": 0.3525
+        },
+        "_all": {
+          "n": 800,
+          "accuracy": 0.31375,
+          "nll": 1.234624883159995,
+          "brier": 0.7043715301156044,
+          "ece": 0.010693321861326703,
+          "majority_accuracy": 0.3025
+        }
+      },
+      "dev_generic": {
+        "ag_news": {
+          "n": 400,
+          "accuracy": 0.9175,
+          "nll": 0.7917554493248463,
+          "brier": 0.4043272349238396,
+          "ece": 0.4469471294432879,
+          "majority_accuracy": 0.2675
+        },
+        "emotion": {
+          "n": 400,
+          "accuracy": 0.795,
+          "nll": 1.2531221744418144,
+          "brier": 0.6125332559645176,
+          "ece": 0.48761758878827094,
+          "majority_accuracy": 0.3525
+        },
+        "_all": {
+          "n": 800,
+          "accuracy": 0.85625,
+          "nll": 1.0224388118833303,
+          "brier": 0.5084302454441786,
+          "ece": 0.4672823591157794,
+          "majority_accuracy": 0.2875
+        }
+      },
+      "test_medical": {
+        "pubmedqa": {
+          "n": 400,
+          "accuracy": 0.605,
+          "nll": 1.0735292533040046,
+          "brier": 0.6501189032196999,
+          "ece": 0.25844556249678136,
+          "majority_accuracy": 0.5775
+        },
+        "medqa": {
+          "n": 400,
+          "accuracy": 0.295,
+          "nll": 1.379810988008976,
+          "brier": 0.7466641916334629,
+          "ece": 0.023004485890269266,
+          "majority_accuracy": 0.2725
+        },
+        "_all": {
+          "n": 800,
+          "accuracy": 0.45,
+          "nll": 1.2266701206564903,
+          "brier": 0.6983915474265814,
+          "ece": 0.14072502419352528,
+          "majority_accuracy": 0.425
+        }
+      },
+      "test_generic": {
+        "ag_news": {
+          "n": 400,
+          "accuracy": 0.9175,
+          "nll": 0.7916833306849003,
+          "brier": 0.4042860183119774,
+          "ece": 0.446910061687231,
+          "majority_accuracy": 0.2675
+        },
+        "emotion": {
+          "n": 400,
+          "accuracy": 0.795,
+          "nll": 1.2530254618823529,
+          "brier": 0.6124927628785372,
+          "ece": 0.48758079465478665,
+          "majority_accuracy": 0.3525
+        },
+        "_all": {
+          "n": 800,
+          "accuracy": 0.85625,
+          "nll": 1.0223543962836266,
+          "brier": 0.5083893905952572,
+          "ece": 0.46724542817100884,
+          "majority_accuracy": 0.2875
+        }
+      },
+      "dev_medical_base": {
+        "medmcqa_val": {
+          "n": 400,
+          "accuracy": 0.265,
+          "nll": 1.4176835802197456,
+          "brier": 0.767613136023283,
+          "ece": 0.09754577048122881,
+          "majority_accuracy": 0.2775
+        },
+        "mednli_dev": {
+          "n": 400,
+          "accuracy": 0.2975,
+          "nll": 1.153053482323885,
+          "brier": 0.7052665682137013,
+          "ece": 0.1578497488796711,
+          "majority_accuracy": 0.3525
+        },
+        "_all": {
+          "n": 800,
+          "accuracy": 0.28375,
+          "nll": 1.2864984188228845,
+          "brier": 0.7368678607791662,
+          "ece": 0.13140144407749177,
+          "majority_accuracy": 0.3025
+        }
+      },
+      "test_medical_base": {
+        "pubmedqa": {
+          "n": 400,
+          "accuracy": 0.5775,
+          "nll": 0.9462588600814342,
+          "brier": 0.5652417109906673,
+          "ece": 0.10634007044136522,
+          "majority_accuracy": 0.5775
+        },
+        "medqa": {
+          "n": 400,
+          "accuracy": 0.275,
+          "nll": 1.4143391759693622,
+          "brier": 0.7675451169908046,
+          "ece": 0.11950859755277635,
+          "majority_accuracy": 0.2725
+        },
+        "_all": {
+          "n": 800,
+          "accuracy": 0.42625,
+          "nll": 1.1802990180253983,
+          "brier": 0.666393413990736,
+          "ece": 0.10276139657944444,
+          "majority_accuracy": 0.425
+        }
+      },
+      "generic_drop": -0.003750000000000031,
+      "eligible": true,
+      "checkpoint_dir": "/kaggle/working/medical_objective_compare/pure_rlcd"
+    },
+    "rlcd_ce": {
+      "epochs": 3,
+      "rlcd_weight": 1.0,
+      "ce_weight": 1.0,
+      "dev_medical": {
+        "medmcqa_val": {
+          "n": 400,
+          "accuracy": 0.295,
+          "nll": 1.3750756435096263,
+          "brier": 0.7438817226141691,
+          "ece": 0.027923990190029124,
+          "majority_accuracy": 0.2775
+        },
+        "mednli_dev": {
+          "n": 400,
+          "accuracy": 0.315,
+          "nll": 1.100933997631073,
+          "brier": 0.6681930696964264,
+          "ece": 0.04037498809397222,
+          "majority_accuracy": 0.3525
+        },
+        "_all": {
+          "n": 800,
+          "accuracy": 0.305,
+          "nll": 1.2380048205703498,
+          "brier": 0.7060373961552977,
+          "ece": 0.022858515642583326,
+          "majority_accuracy": 0.3025
+        }
+      },
+      "dev_generic": {
+        "ag_news": {
+          "n": 400,
+          "accuracy": 0.93,
+          "nll": 0.6661863642185927,
+          "brier": 0.3258971416950226,
+          "ece": 0.393529656007886,
+          "majority_accuracy": 0.2675
+        },
+        "emotion": {
+          "n": 400,
+          "accuracy": 0.795,
+          "nll": 1.1258586205542087,
+          "brier": 0.5527912537008524,
+          "ece": 0.43721318081021315,
+          "majority_accuracy": 0.3525
+        },
+        "_all": {
+          "n": 800,
+          "accuracy": 0.8625,
+          "nll": 0.8960224923864007,
+          "brier": 0.4393441976979375,
+          "ece": 0.4148717390373349,
+          "majority_accuracy": 0.2875
+        }
+      },
+      "test_medical": {
+        "pubmedqa": {
+          "n": 400,
+          "accuracy": 0.425,
+          "nll": 1.0732754468917847,
+          "brier": 0.6500781491398812,
+          "ece": 0.07497149877250192,
+          "majority_accuracy": 0.5775
+        },
+        "medqa": {
+          "n": 400,
+          "accuracy": 0.305,
+          "nll": 1.3792841941118241,
+          "brier": 0.7465818971395493,
+          "ece": 0.017407921478152295,
+          "majority_accuracy": 0.2725
+        },
+        "_all": {
+          "n": 800,
+          "accuracy": 0.365,
+          "nll": 1.2262798205018044,
+          "brier": 0.6983300231397152,
+          "ece": 0.04418341979384423,
+          "majority_accuracy": 0.425
+        }
+      },
+      "test_generic": {
+        "ag_news": {
+          "n": 400,
+          "accuracy": 0.93,
+          "nll": 0.6660947512090206,
+          "brier": 0.3258424833789468,
+          "ece": 0.39346673399209975,
+          "majority_accuracy": 0.2675
+        },
+        "emotion": {
+          "n": 400,
+          "accuracy": 0.795,
+          "nll": 1.1257425370812415,
+          "brier": 0.5527344952523708,
+          "ece": 0.43716814324259756,
+          "majority_accuracy": 0.3525
+        },
+        "_all": {
+          "n": 800,
+          "accuracy": 0.8625,
+          "nll": 0.8959186441451311,
+          "brier": 0.4392884893156588,
+          "ece": 0.4148172438144684,
+          "majority_accuracy": 0.2875
+        }
+      },
+      "dev_medical_base": {
+        "medmcqa_val": {
+          "n": 400,
+          "accuracy": 0.265,
+          "nll": 1.4176835802197456,
+          "brier": 0.767613136023283,
+          "ece": 0.09754577048122881,
+          "majority_accuracy": 0.2775
+        },
+        "mednli_dev": {
+          "n": 400,
+          "accuracy": 0.2975,
+          "nll": 1.153053482323885,
+          "brier": 0.7052665682137013,
+          "ece": 0.1578497488796711,
+          "majority_accuracy": 0.3525
+        },
+        "_all": {
+          "n": 800,
+          "accuracy": 0.28375,
+          "nll": 1.2864984188228845,
+          "brier": 0.7368678607791662,
+          "ece": 0.13140144407749177,
+          "majority_accuracy": 0.3025
+        }
+      },
+      "test_medical_base": {
+        "pubmedqa": {
+          "n": 400,
+          "accuracy": 0.5775,
+          "nll": 0.9462588600814342,
+          "brier": 0.5652417109906673,
+          "ece": 0.10634007044136522,
+          "majority_accuracy": 0.5775
+        },
+        "medqa": {
+          "n": 400,
+          "accuracy": 0.275,
+          "nll": 1.4143391759693622,
+          "brier": 0.7675451169908046,
+          "ece": 0.11950859755277635,
+          "majority_accuracy": 0.2725
+        },
+        "_all": {
+          "n": 800,
+          "accuracy": 0.42625,
+          "nll": 1.1802990180253983,
+          "brier": 0.666393413990736,
+          "ece": 0.10276139657944444,
+          "majority_accuracy": 0.425
+        }
+      },
+      "generic_drop": 0.0025000000000000577,
+      "eligible": true,
+      "checkpoint_dir": "/kaggle/working/medical_objective_compare/rlcd_ce"
+    },
+    "ce_only": {
+      "epochs": 3,
+      "rlcd_weight": 0.0,
+      "ce_weight": 1.0,
+      "dev_medical": {
+        "medmcqa_val": {
+          "n": 400,
+          "accuracy": 0.3,
+          "nll": 1.3680888448655606,
+          "brier": 0.740076155513525,
+          "ece": 0.02150229670107364,
+          "majority_accuracy": 0.2775
+        },
+        "mednli_dev": {
+          "n": 400,
+          "accuracy": 0.3075,
+          "nll": 1.098558053970337,
+          "brier": 0.6666096478700638,
+          "ece": 0.037011265009641636,
+          "majority_accuracy": 0.3525
+        },
+        "_all": {
+          "n": 800,
+          "accuracy": 0.30375,
+          "nll": 1.2333234494179488,
+          "brier": 0.7033429016917944,
+          "ece": 0.020989730618894083,
+          "majority_accuracy": 0.3025
+        }
+      },
+      "dev_generic": {
+        "ag_news": {
+          "n": 400,
+          "accuracy": 0.9075,
+          "nll": 0.6878726526349783,
+          "brier": 0.3380604291707277,
+          "ece": 0.3950391165167094,
+          "majority_accuracy": 0.2675
+        },
+        "emotion": {
+          "n": 400,
+          "accuracy": 0.7875,
+          "nll": 1.1256955367326738,
+          "brier": 0.5493992781639099,
+          "ece": 0.4248815671727061,
+          "majority_accuracy": 0.3525
+        },
+        "_all": {
+          "n": 800,
+          "accuracy": 0.8475,
+          "nll": 0.9067840946838259,
+          "brier": 0.4437298536673188,
+          "ece": 0.4022000695951284,
+          "majority_accuracy": 0.2875
+        }
+      },
+      "test_medical": {
+        "pubmedqa": {
+          "n": 400,
+          "accuracy": 0.605,
+          "nll": 1.0576824694871902,
+          "brier": 0.6396368014812469,
+          "ece": 0.24882913567125797,
+          "majority_accuracy": 0.5775
+        },
+        "medqa": {
+          "n": 400,
+          "accuracy": 0.285,
+          "nll": 1.3803609117865563,
+          "brier": 0.7469144761562347,
+          "ece": 0.03206265717744829,
+          "majority_accuracy": 0.2725
+        },
+        "_all": {
+          "n": 800,
+          "accuracy": 0.445,
+          "nll": 1.2190216906368732,
+          "brier": 0.6932756388187409,
+          "ece": 0.13849145676940683,
+          "majority_accuracy": 0.425
+        }
+      },
+      "test_generic": {
+        "ag_news": {
+          "n": 400,
+          "accuracy": 0.9075,
+          "nll": 0.687942075356841,
+          "brier": 0.33811230793595315,
+          "ece": 0.3950823286920786,
+          "majority_accuracy": 0.2675
+        },
+        "emotion": {
+          "n": 400,
+          "accuracy": 0.785,
+          "nll": 1.1257719826698303,
+          "brier": 0.5494380561262369,
+          "ece": 0.42241259902715683,
+          "majority_accuracy": 0.3525
+        },
+        "_all": {
+          "n": 800,
+          "accuracy": 0.84625,
+          "nll": 0.9068570290133358,
+          "brier": 0.443775182031095,
+          "ece": 0.40098445679992434,
+          "majority_accuracy": 0.2875
+        }
+      },
+      "dev_medical_base": {
+        "medmcqa_val": {
+          "n": 400,
+          "accuracy": 0.265,
+          "nll": 1.4176835802197456,
+          "brier": 0.767613136023283,
+          "ece": 0.09754577048122881,
+          "majority_accuracy": 0.2775
+        },
+        "mednli_dev": {
+          "n": 400,
+          "accuracy": 0.2975,
+          "nll": 1.153053482323885,
+          "brier": 0.7052665682137013,
+          "ece": 0.1578497488796711,
+          "majority_accuracy": 0.3525
+        },
+        "_all": {
+          "n": 800,
+          "accuracy": 0.28375,
+          "nll": 1.2864984188228845,
+          "brier": 0.7368678607791662,
+          "ece": 0.13140144407749177,
+          "majority_accuracy": 0.3025
+        }
+      },
+      "test_medical_base": {
+        "pubmedqa": {
+          "n": 400,
+          "accuracy": 0.5775,
+          "nll": 0.9462588600814342,
+          "brier": 0.5652417109906673,
+          "ece": 0.10634007044136522,
+          "majority_accuracy": 0.5775
+        },
+        "medqa": {
+          "n": 400,
+          "accuracy": 0.275,
+          "nll": 1.4143391759693622,
+          "brier": 0.7675451169908046,
+          "ece": 0.11950859755277635,
+          "majority_accuracy": 0.2725
+        },
+        "_all": {
+          "n": 800,
+          "accuracy": 0.42625,
+          "nll": 1.1802990180253983,
+          "brier": 0.666393413990736,
+          "ece": 0.10276139657944444,
+          "majority_accuracy": 0.425
+        }
+      },
+      "generic_drop": -0.012499999999999956,
+      "eligible": true,
+      "checkpoint_dir": "/kaggle/working/medical_objective_compare/ce_only"
+    }
+  }
+}

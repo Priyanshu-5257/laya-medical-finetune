@@ -50,7 +50,7 @@ PY
 )"
 echo "teacher_dir=$TEACHER_DIR"
 
-echo "=== distill (frozen BioClinical encoder, Laya soft targets) ==="
+echo "=== align BioClinical encoder and Laya head ==="
 torchrun --standalone --nproc_per_node="$NPROC" scripts/distill_ddp.py \
   --config "$DISTILL_CFG" \
   --teacher-dir "$TEACHER_DIR" \
@@ -71,8 +71,8 @@ from pathlib import Path
 report = json.load(open("$WORK/eval_report_distill.json"))
 summary = {
   "ok": True,
-  "stage": "distill_bioclinical_head",
-  "freeze_encoder": True,
+  "stage": "align_bioclinical_encoder_and_head",
+  "freeze_encoder": False,
   "generic_base_acc": report["base"]["generic"]["_all"]["accuracy"],
   "generic_ft_acc": report["finetuned"]["generic"]["_all"]["accuracy"],
   "medical_base_acc": report["base"]["medical"]["_all"]["accuracy"],
@@ -84,6 +84,23 @@ summary = {
 }
 Path("$WORK/summary_distill.json").write_text(json.dumps(summary, indent=2))
 print(json.dumps(summary, indent=2))
+gate = {
+  "generic_min": float("${GATE_GENERIC_MIN:-0.70}"),
+  "medical_min": float("${GATE_MEDICAL_MIN:-0.35}"),
+  "typed_max_drop": float("${GATE_TYPED_MAX_DROP:-0.10}"),
+}
+gate["generic_ok"] = summary["generic_ft_acc"] >= gate["generic_min"]
+gate["medical_ok"] = summary["medical_ft_acc"] >= gate["medical_min"]
+typed_base = report["base"]["alignment"]["_all"]["accuracy"]
+typed_student = report["finetuned"]["alignment"]["_all"]["accuracy"]
+gate["typed_base"] = typed_base
+gate["typed_student"] = typed_student
+gate["typed_ok"] = typed_student >= typed_base - gate["typed_max_drop"]
+gate["pass"] = gate["generic_ok"] and gate["medical_ok"] and gate["typed_ok"]
+Path("$WORK/distill_gate.json").write_text(json.dumps(gate, indent=2))
+print("distill_gate:", json.dumps(gate, indent=2))
+if not gate["pass"]:
+    raise SystemExit("Distilled student failed the alignment gate; medical training skipped")
 PY
 
 echo "=== medical pure-RLCD smoke from distilled student ==="
@@ -126,7 +143,6 @@ summary = {
   "medical_delta": report["deltas"]["medical"]["_all"]["accuracy_delta"],
   "pubmedqa_delta": report["deltas"]["medical"]["pubmedqa"]["accuracy_delta"],
   "medqa_delta": report["deltas"]["medical"]["medqa"]["accuracy_delta"],
-  "vs_smoke_pure_rlcd_fixed": {"medical_delta": 0.01125, "generic_delta": 0.0025},
 }
 Path("$WORK/summary_bioclinical_medical.json").write_text(json.dumps(summary, indent=2))
 print(json.dumps(summary, indent=2))

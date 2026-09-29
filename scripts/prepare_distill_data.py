@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import random
 import sys
 from pathlib import Path
 
@@ -88,16 +89,21 @@ def main():
         "head_max_len": int(conf.get("head_max_len", base_cfg.get("head_max_len", 192))),
     }
     tok = AutoTokenizer.from_pretrained(os.path.join(laya_dir, "tokenizer"))
-    print("Building typed-decisions train items...", flush=True)
-    train_items = build_typed_items(tok, cfg, split="train")
-    print(f"  typed-decisions: {len(train_items)}", flush=True)
-    eval_conf = conf["eval"]
     seed = int(conf.get("seed", 20260923))
-    packs = {"generic": {}, "medical": {}}
+    print("Building alignment train items...", flush=True)
+    typed_items = build_typed_items(tok, cfg, split="train")
+    n_generic = int(conf.get("generic_train_n_per_task", 4000))
+    train_items = typed_items + build_ag_news_items(tok, cfg, n_generic, seed=seed, split="train")
+    train_items += build_emotion_items(tok, cfg, n_generic, seed=seed + 1, split="train")
+    random.Random(seed).shuffle(train_items)
+    print(f"  typed-decisions: {len(typed_items)}, total: {len(train_items)}", flush=True)
+    eval_conf = conf["eval"]
+    packs = {"generic": {}, "medical": {}, "alignment": {}}
     packs["generic"]["ag_news"] = build_ag_news_items(tok, cfg, int(eval_conf["generic_n_per_task"]), seed + 100)
     packs["generic"]["emotion"] = build_emotion_items(tok, cfg, int(eval_conf["generic_n_per_task"]), seed + 101)
     packs["medical"]["pubmedqa"] = build_pubmedqa_items(tok, cfg, int(eval_conf["medical_n_per_task"]), seed + 200)
     packs["medical"]["medqa"] = build_medqa_items(tok, cfg, int(eval_conf["medical_n_per_task"]), seed + 201)
+    packs["alignment"]["typed_decisions"] = build_typed_items(tok, cfg, split="test")
     os.makedirs(args.out_dir, exist_ok=True)
     torch.save(train_items, os.path.join(args.out_dir, "distill_items.pt"))
     torch.save(packs, os.path.join(args.out_dir, "eval_packs.pt"))

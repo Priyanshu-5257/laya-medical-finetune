@@ -31,7 +31,7 @@ def parse_args():
 
 
 @torch.no_grad()
-def teacher_targets(teacher, tok, items, device, batch_size=16):
+def teacher_targets(teacher, tok, items, device, batch_size=16, teacher_mix=0.5):
     teacher.eval()
     for i in range(0, len(items), batch_size):
         chunk = items[i : i + batch_size]
@@ -50,7 +50,8 @@ def teacher_targets(teacher, tok, items, device, batch_size=16):
         for j, it in enumerate(chunk):
             k = len(it["markers"])
             it["gold_target"] = list(it["target"])
-            it["target"] = probs[j, :k].cpu().tolist()
+            gold = torch.tensor(it["gold_target"], device=device)
+            it["target"] = ((1 - teacher_mix) * gold + teacher_mix * probs[j, :k]).cpu().tolist()
 
 
 def main():
@@ -77,7 +78,7 @@ def main():
         teacher.to(device).eval()
         for p in teacher.parameters():
             p.requires_grad = False
-        teacher_targets(teacher, tok, items, device)
+        teacher_targets(teacher, tok, items, device, teacher_mix=float(tconf.get("teacher_mix", 0.5)))
         del teacher
         torch.cuda.empty_cache()
         labeled = os.path.join(os.path.dirname(args.train_items), "distill_items_teacher.pt")
@@ -98,11 +99,17 @@ def main():
                 p.requires_grad = False
     model.to(device)
     model.train()
-    model.encoder.eval()
+    if freeze:
+        model.encoder.eval()
+    else:
+        model.encoder.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+        model.head_checkpointing = True
     ddp = DDP(model, device_ids=[local_rank], find_unused_parameters=True)
 
-    head_params = [p for n, p in ddp.named_parameters() if p.requires_grad]
-    n_train_params = sum(p.numel() for p in head_params)
+    encoder_params = [p for n, p in ddp.named_parameters() if n.startswith("module.encoder.") and p.requires_grad]
+    head_params = [p for n, p in ddp.named_parameters() if not n.startswith("module.encoder.") and p.requires_grad]
+    train_params = encoder_params + head_params
+    n_train_params = sum(p.numel() for p in train_params)
     if rank == 0:
         enc_train = sum(p.numel() for n, p in ddp.named_parameters() if n.startswith("module.encoder.") and p.requires_grad)
         print(f"trainable head params={n_train_params} encoder_trainable={enc_train} freeze_encoder={freeze}", flush=True)
@@ -112,7 +119,11 @@ def main():
     micro = int(tconf["micro_batch"])
     accum = int(tconf["grad_accum"])
     lr = float(tconf["lr_head"])
-    opt = torch.optim.AdamW(head_params, lr=lr, weight_decay=float(tconf.get("weight_decay", 0.01)))
+    opt = torch.optim.AdamW(
+        [{"params": encoder_params, "lr": float(tconf.get("lr_encoder", 5e-6))},
+         {"params": head_params, "lr": lr}],
+        weight_decay=float(tconf.get("weight_decay", 0.01)),
+    )
     updates = max(1, (len(my_items) // max(1, micro * accum)) * epochs)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=updates, eta_min=1e-6)
     scaler = torch.amp.GradScaler("cuda", enabled=True)
@@ -124,7 +135,8 @@ def main():
     for epoch in range(epochs):
         random.seed(42 + epoch + rank)
         random.shuffle(my_items)
-        ddp.module.encoder.eval()
+        if freeze:
+            ddp.module.encoder.eval()
         loss_sum, n_batches = 0.0, 0
         opt.zero_grad(set_to_none=True)
         accum_i = 0
@@ -140,7 +152,7 @@ def main():
                     batch["marker_pos"].to(device),
                     batch["marker_mask"].to(device),
                     batch["qtype"].to(device),
-                    detach_encoder=True,
+                    detach_encoder=freeze,
                 )
             mask = batch["marker_mask"].to(device)
             target = batch["target"].to(device)
@@ -152,10 +164,12 @@ def main():
             accum_i += 1
             if accum_i % accum == 0 or (b + micro) >= len(my_items):
                 scaler.unscale_(opt)
-                torch.nn.utils.clip_grad_norm_(head_params, 1.0)
+                torch.nn.utils.clip_grad_norm_(train_params, 1.0)
+                scale_before = scaler.get_scale()
                 scaler.step(opt)
                 scaler.update()
-                sched.step()
+                if scaler.get_scale() >= scale_before:
+                    sched.step()
                 opt.zero_grad(set_to_none=True)
                 step += 1
             loss_sum += float(loss.item() * accum)
