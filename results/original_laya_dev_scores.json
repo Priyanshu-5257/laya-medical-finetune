@@ -1,0 +1,151 @@
+{
+  "model": "convaiinnovations/laya",
+  "checkpoint": "untouched original Laya",
+  "dev_pack_sha256": "5cdfc05f6d262d2e2ae1c0428f279341954c32a3121ef6aa424a6f7b947ff7b7",
+  "scores": {
+    "generic": {
+      "ag_news": {
+        "n": 400,
+        "accuracy": 0.9125,
+        "majority_accuracy": 0.2675,
+        "option_position_macro_f1": 0.9132776650881038,
+        "label_counts": [
+          107,
+          89,
+          100,
+          104
+        ],
+        "pred_counts": [
+          113,
+          83,
+          90,
+          114
+        ],
+        "ece": 0.02158517681062221,
+        "nll": 0.23726727113418747,
+        "brier": 0.12633411740998268
+      },
+      "emotion": {
+        "n": 400,
+        "accuracy": 0.63,
+        "majority_accuracy": 0.3525,
+        "option_position_macro_f1": 0.5584505816705915,
+        "label_counts": [
+          105,
+          141,
+          33,
+          57,
+          48,
+          16
+        ],
+        "pred_counts": [
+          147,
+          143,
+          25,
+          48,
+          27,
+          10
+        ],
+        "ece": 0.20873345199972393,
+        "nll": 1.3736191147588397,
+        "brier": 0.5974527389010477
+      },
+      "_all": {
+        "n": 800,
+        "accuracy": 0.77125,
+        "majority_accuracy": 0.2875,
+        "option_position_macro_f1": 0.6919404620437007,
+        "label_counts": [
+          212,
+          230,
+          133,
+          161,
+          48,
+          16
+        ],
+        "pred_counts": [
+          260,
+          226,
+          115,
+          162,
+          27,
+          10
+        ],
+        "ece": 0.11050547560676932,
+        "nll": 0.8054431929465136,
+        "brier": 0.3618934281555151
+      }
+    },
+    "medical": {
+      "medmcqa_val": {
+        "n": 400,
+        "accuracy": 0.2225,
+        "majority_accuracy": 0.2775,
+        "option_position_macro_f1": 0.21634406283241744,
+        "label_counts": [
+          93,
+          111,
+          101,
+          95
+        ],
+        "pred_counts": [
+          148,
+          99,
+          82,
+          71
+        ],
+        "ece": 0.24041515246033668,
+        "nll": 1.6105063450708985,
+        "brier": 0.8551410799659789
+      },
+      "mednli_dev": {
+        "n": 400,
+        "accuracy": 0.695,
+        "majority_accuracy": 0.3525,
+        "option_position_macro_f1": 0.695347848156837,
+        "label_counts": [
+          129,
+          130,
+          141
+        ],
+        "pred_counts": [
+          144,
+          137,
+          119
+        ],
+        "ece": 0.2074926778674126,
+        "nll": 0.9607693647942506,
+        "brier": 0.4984641690038734
+      },
+      "_all": {
+        "n": 800,
+        "accuracy": 0.45875,
+        "majority_accuracy": 0.3025,
+        "option_position_macro_f1": 0.41154176590684677,
+        "label_counts": [
+          222,
+          241,
+          242,
+          95
+        ],
+        "pred_counts": [
+          292,
+          236,
+          201,
+          71
+        ],
+        "ece": 0.22291018433868887,
+        "nll": 1.2856378549325747,
+        "brier": 0.6768026244849261
+      }
+    }
+  },
+  "validation_pack_payload_sha256": "94cf1f5e7a52aab367de08f0d995ecdc0560eb3796e53e06ae58fe01c293fdf3",
+  "comparison": {
+    "aligned_base_medmcqa_accuracy": 0.2725,
+    "aligned_base_mednli_accuracy": 0.2875,
+    "aligned_base_combined_accuracy": 0.28,
+    "same_serialized_examples_and_inputs": true,
+    "notebook": "https://www.kaggle.com/code/aivenger1st/laya-original-medical-dev"
+  }
+}
