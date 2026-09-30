@@ -4,6 +4,40 @@ Public code: https://github.com/Priyanshu-5257/laya-medical-finetune
 
 Goal: specialize `convaiinnovations/laya` (ModernBERT-large encoder + decision head, 512 context) on medical decisions without collapsing generic accuracy. Compute was Kaggle 2×T4. Training is Laya-style RLCD: Gaussian noise on logits, strictly proper reward (log + spherical, RPS on score items), REINFORCE with a group-mean baseline. Eval is always held out of the train mix: AG News + Emotion (generic) and PubMedQA + MedQA (medical), 400 items each. Base Laya on that split is generic **0.770** and medical **0.405** (PubMedQA 0.53, MedQA 0.28).
 
+## Experiments at a glance
+
+Medical external is the combined 400 PubMedQA + 400 MedQA score; generic external is 400 AG News + 400 Emotion. Medical dev is 400 MedMCQA validation + 400 MedNLI dev and was introduced for the later controlled runs. Scores are percentages. Earlier runs used a different evaluation preparation, and some pre-audit MedQA labels were wrong, so compare scores within each experiment group rather than ranking every row together. The external medical pack was reused for exploration and is not a pristine final test.
+
+| Approach | Short description | Medical dev | Medical external | Generic external |
+|---|---|---:|---:|---:|
+| Base Laya | Original general encoder and decision head | — | 40.5 | 77.0 |
+| Small pure RLCD smoke, old labels | One epoch with the earlier MedMCQA label bug | — | 41.9 | ~76.5 |
+| Small pure RLCD smoke, fixed labels | Full encoder and head, 5k questions, one epoch | — | 41.6 | ~77.3 |
+| Middle-third LoRA | Train LoRA on encoder layers 9–17 only | — | ~40.6 | ~77.0 |
+| Middle-third full FT | Train the same layers without LoRA | — | ~40.4 | ~76.9 |
+| Small Laya recipe smoke | RLCD + CE, half teacher targets, one epoch | — | 41.1 | ~76.6 |
+| Full-data pure RLCD, epoch 3 | ~194k medical questions; reported peak at epoch 3 of five | — | **46.3** | 77.5 |
+| 50k Laya recipe | RLCD + CE + half teacher targets, three epochs | — | 44.0 | ~77.3 |
+| 50k Laya recipe, 2× LR | Five epochs; final checkpoint after an epoch-3 peak | — | ~42.0 | ~76.6 |
+| 50k Laya recipe, 5× LR | Training diverged in epoch 1 | — | — | — |
+| BioClinical swap v1 | Frozen medical encoder; head-only distillation, then medical smoke | — | 29.5 | 23.9 |
+| BioClinical alignment v2 | Train medical encoder and head on decisions plus generic tasks | — | 42.6 | 85.5 |
+| Alignment v2 + medical smoke | One epoch of medical RLCD from the aligned checkpoint | — | 42.9 | 84.9 |
+| Aligned checkpoint, corrected pack | Starting point for the later controlled runs | 28.0 | 42.3 | 85.5 |
+| Pure RLCD objective | Same aligned checkpoint and 5k sample, three epochs | 31.4 | 45.3 | 85.6 |
+| RLCD + CE objective | Add hard-label CE to the same medical run | 30.5 | 36.8 | 86.3 |
+| CE-only objective | Hard-label CE without RLCD | 30.4 | 44.8 | 84.6 |
+| Legacy normalized RLCD | Score-function gradient with batch-normalized advantage | 30.1 | 31.4 | 85.5 |
+| Leave-one-out RLCD | Unnormalized leave-one-out score-function gradient | 30.4 | 44.9 | 86.1 |
+| Pathwise RLCD | Differentiate the noisy proper-score reward directly | 34.6 | 45.0 | 85.3 |
+| Pathwise + one shuffled view | Random student option order and consistency weight 0.1 | 32.4 | 43.8 | 86.5 |
+| Pathwise control, seed 20260923 | Stop at epoch 2 of the three-epoch schedule | 32.6 | 45.6 | 85.6 |
+| Pathwise + two views, seed 20260923 | Independent option orders; consistency weight 0.5 | **43.0** | **47.5** | 85.8 |
+| Pathwise control, seed 20260924 | Same recipe with a second random seed | 31.9 | 34.5 | 85.4 |
+| Pathwise + two views, seed 20260924 | Same stronger order intervention with second seed | 33.1 | 42.8 | 86.3 |
+
+The two-view method improved both same-seed comparisons, but the medical gain varied sharply. The strongest single external score here is 47.5%; it comes from a repeatedly examined 800-item sample and should be treated as exploratory.
+
 ## Data and recipe notes
 
 - Train sources were MedMCQA and MedNLI only. Medical eval sets were never in training.
@@ -144,17 +178,17 @@ These are published scores on the named benchmarks, **not scores on our exact sa
 
 | Task | Our best (sample) | Biomedical encoder example | Larger model example |
 |---|---:|---:|---:|
-| PubMedQA | 60.5% (400) | BioLinkBERT-large 72.2% ([model card](https://huggingface.co/michiyasunaga/BioLinkBERT-large)) | Med-PaLM 2 81.8% ([paper](https://pmc.ncbi.nlm.nih.gov/articles/PMC11922739/)) |
-| MedQA, 4 options | 31.0% (400, corrected labels) | BioLinkBERT-large 44.6% ([model card](https://huggingface.co/michiyasunaga/BioLinkBERT-large)) | MedGemma 27B Text 87.7%; Med-Gemini 91.1% ([Google Research](https://research.google/blog/medgemma-our-most-capable-open-models-for-health-ai-development/), [Med-Gemini report](https://research.google/blog/advancing-medical-ai-with-med-gemini/)) |
-| MedMCQA validation | 30.25% (400) | PubMedBERT 40% without retrieval, 43% with PubMed retrieval ([dataset paper](https://proceedings.mlr.press/v174/pal22a/pal22a.pdf)) | Med-PaLM 2 72.3% ([paper](https://pmc.ncbi.nlm.nih.gov/articles/PMC11922739/)) |
-| MedNLI dev | 32.5% (400) | Bio+Clinical BERT 82.7% on the **test** split ([paper](https://aclanthology.org/W19-1909/)) | — |
+| PubMedQA | 63.0% (400) | BioLinkBERT-large 72.2% ([model card](https://huggingface.co/michiyasunaga/BioLinkBERT-large)) | Med-PaLM 2 81.8% ([paper](https://pmc.ncbi.nlm.nih.gov/articles/PMC11922739/)) |
+| MedQA, 4 options | 33.3% (400, corrected labels) | BioLinkBERT-large 44.6% ([model card](https://huggingface.co/michiyasunaga/BioLinkBERT-large)) | MedGemma 27B Text 87.7%; Med-Gemini 91.1% ([Google Research](https://research.google/blog/medgemma-our-most-capable-open-models-for-health-ai-development/), [Med-Gemini report](https://research.google/blog/advancing-medical-ai-with-med-gemini/)) |
+| MedMCQA validation | 33.8% (400) | PubMedBERT 40% without retrieval, 43% with PubMed retrieval ([dataset paper](https://proceedings.mlr.press/v174/pal22a/pal22a.pdf)) | Med-PaLM 2 72.3% ([paper](https://pmc.ncbi.nlm.nih.gov/articles/PMC11922739/)) |
+| MedNLI dev | 55.5% (400) | Bio+Clinical BERT 82.7% on the **test** split ([paper](https://aclanthology.org/W19-1909/)) | — |
 
 The PubMedQA comparison has a particularly important split mismatch: our builder samples 400 from all 1,000 `pqa_labeled` items, whereas the [benchmark's official preparation](https://github.com/pubmedqa/pubmedqa/blob/master/preprocess/split_dataset.py) reserves 500 items for test and uses the other 500 for train/development. Our model did not train on PubMedQA labels, but the published figures are still not evaluated on the same rows. MedNLI dev is another split mismatch; the Bio+Clinical BERT result uses test. Our medical training uses only 4k MedMCQA and 1k MedNLI items, while published task-specific encoders generally train on the full task data. The near-chance MedNLI result and MedQA result near the 25% four-choice chance level are stronger evidence of a weak medical decision interface than the aggregate medical accuracy alone.
 
 ## What the results support
 
-- The starting Laya encoder is not a medical model. Full encoder RLCD on MedMCQA/MedNLI still helps: best held-out medical gain so far is **+5.6pp** at epoch 3 of the full pure-RLCD run, with generic accuracy held.
+- The starting Laya encoder is not a medical model. Full encoder RLCD on MedMCQA/MedNLI helped: the full-data run reported **46.3%** medical accuracy at epoch 3 with generic accuracy held. The later two-view run reached **47.5%** on the repeatedly examined external sample, but varied substantially between seeds.
 - Gains peak and then slip. Later epochs and a 2× learning rate improved the training reward while held-out medical accuracy got worse. Prefer the epoch-3 region over riding the reward curve.
 - On the small fair smoke, pure RLCD beat Laya's CE + soft-teacher mix. At 50k×3 the Laya mix did reach +3.5pp, still short of the full pure-RLCD peak.
 - Middle-only LoRA or middle-only full FT did not help.
-- Dropping in BioClinical ModernBERT and distilling only the head failed the gate (medical already down before medical fine-tuning). A next attempt would need a much closer interface fit (more distillation, or a light encoder update) before spending a long medical run on that student.
+- Dropping in BioClinical ModernBERT and distilling only the head failed the gate. Updating the encoder during alignment recovered generic accuracy, but the later medical gains remained small and seed sensitive.
