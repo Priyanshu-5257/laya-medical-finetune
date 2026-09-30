@@ -28,7 +28,14 @@ def main() -> None:
     owner = "aivenger1st" if args.shard == "a" else "hbpkillerx"
     source_key = "kernel_sources" if args.shard == "a" else "dataset_sources"
     source = ALIGNED_KERNEL if args.shard == "a" else ALIGNED_DATASET
-    checkpoint_glob = "bioclinical_distill/rl_agent_config.json" if args.shard == "a" else "rl_agent_config.json"
+    checkpoint_setup = (
+        "candidates = list(pathlib.Path('/kaggle/input').rglob('bioclinical_distill/rl_agent_config.json'))\n"
+        if args.shard == "a" else
+        "archive = pathlib.Path('/kaggle/input/laya-bioclinical-aligned/bioclinical_distill.tar')\n"
+        "assert archive.is_file(), archive\n"
+        "subprocess.run(['tar', '-xf', str(archive), '-C', '/kaggle/working'], check=True)\n"
+        "candidates = [pathlib.Path('/kaggle/working/bioclinical_distill/rl_agent_config.json')]\n"
+    )
     nb = {
         "cells": [
             cell("import torch\nprint('GPUs:', torch.cuda.device_count())\nassert torch.cuda.device_count() == 2\n", "gpu-check"),
@@ -41,7 +48,7 @@ def main() -> None:
                 "subprocess.run(['git', 'checkout', '--detach', commit], cwd=root, check=True)\n"
                 "actual = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip()\n"
                 "assert actual == commit, (actual, commit)\n"
-                f"candidates = list(pathlib.Path('/kaggle/input').rglob({checkpoint_glob!r}))\n"
+                f"{checkpoint_setup}"
                 "print('Aligned checkpoint candidates:', candidates, flush=True)\n"
                 "assert len(candidates) == 1, 'Expected exactly one aligned BioClinical checkpoint'\n"
                 "base_dir = candidates[0].parent\n"
