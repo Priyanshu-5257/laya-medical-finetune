@@ -95,8 +95,22 @@ def main():
     n_generic = int(conf.get("generic_train_n_per_task", 4000))
     train_items = typed_items + build_ag_news_items(tok, cfg, n_generic, seed=seed, split="train")
     train_items += build_emotion_items(tok, cfg, n_generic, seed=seed + 1, split="train")
+    medical_conf = conf.get("medical_alignment") or {}
+    medical_counts = {}
+    if medical_conf.get("enabled", False):
+        n_nli = int(medical_conf.get("mednli_n", 0))
+        n_mcqa = int(medical_conf.get("medmcqa_n", 0))
+        nli_items = _prep.build_mednli_items(tok, cfg, n_nli, seed + 10, True, split="train")
+        mcqa_items = _prep.build_medmcqa_items(tok, cfg, n_mcqa, seed, True, split="train")
+        for item in nli_items:
+            item["meta"]["teacher_mix"] = float(medical_conf.get("mednli_teacher_mix", 0.5))
+        for item in mcqa_items:
+            item["meta"]["teacher_mix"] = 0.0
+        medical_counts = {"mednli": len(nli_items), "medmcqa": len(mcqa_items)}
+        train_items.extend(nli_items)
+        train_items.extend(mcqa_items)
     random.Random(seed).shuffle(train_items)
-    print(f"  typed-decisions: {len(typed_items)}, total: {len(train_items)}", flush=True)
+    print(f"  typed-decisions: {len(typed_items)}, medical: {medical_counts}, total: {len(train_items)}", flush=True)
     eval_conf = conf["eval"]
     packs = {"generic": {}, "medical": {}, "alignment": {}}
     packs["generic"]["ag_news"] = build_ag_news_items(tok, cfg, int(eval_conf["generic_n_per_task"]), seed + 100)
@@ -111,6 +125,7 @@ def main():
         "teacher_id": conf["teacher_id"],
         "teacher_dir": laya_dir,
         "n_distill": len(train_items),
+        "medical_alignment": medical_counts,
         "eval": {
             "generic": {k: len(v) for k, v in packs["generic"].items()},
             "medical": {k: len(v) for k, v in packs["medical"].items()},

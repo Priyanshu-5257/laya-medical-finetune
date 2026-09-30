@@ -1,0 +1,27 @@
+# Align BioClinical encoder with Laya's typed decisions and medical examples.
+teacher_id: convaiinnovations/laya
+encoder_id: thomas-sounack/BioClinical-ModernBERT-large
+max_len: 512
+head_max_len: 192
+seed: 20260923
+freeze_encoder: false
+generic_train_n_per_task: 4000
+medical_alignment:
+  enabled: true
+  mednli_n: 0  # all of the official train split
+  mednli_teacher_mix: 0.5
+  medmcqa_n: 4000
+
+train:
+  epochs: 3
+  micro_batch: 4
+  grad_accum: 4
+  lr_encoder: 5.0e-6
+  lr_head: 1.0e-4
+  teacher_mix: 0.5
+  weight_decay: 0.01
+  log_every: 50
+
+eval:
+  generic_n_per_task: 400
+  medical_n_per_task: 400

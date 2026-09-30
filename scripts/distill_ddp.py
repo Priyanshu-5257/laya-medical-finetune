@@ -33,8 +33,11 @@ def parse_args():
 @torch.no_grad()
 def teacher_targets(teacher, tok, items, device, batch_size=16, teacher_mix=0.5):
     teacher.eval()
-    for i in range(0, len(items), batch_size):
-        chunk = items[i : i + batch_size]
+    for it in items:
+        it["gold_target"] = list(it["target"])
+    eligible = [it for it in items if float(it.get("meta", {}).get("teacher_mix", teacher_mix)) > 0]
+    for i in range(0, len(eligible), batch_size):
+        chunk = eligible[i : i + batch_size]
         batch = collate_train_batch(chunk, tok.pad_token_id)
         with torch.autocast("cuda", dtype=torch.float16, enabled=device.type == "cuda"):
             logits, _ = teacher(
@@ -49,9 +52,11 @@ def teacher_targets(teacher, tok, items, device, batch_size=16, teacher_mix=0.5)
         probs = torch.softmax(logits.masked_fill(~mask, -1e4), -1)
         for j, it in enumerate(chunk):
             k = len(it["markers"])
-            it["gold_target"] = list(it["target"])
+            mix = float(it.get("meta", {}).get("teacher_mix", teacher_mix))
+            if not 0.0 <= mix <= 1.0:
+                raise ValueError(f"teacher_mix must be in [0,1], got {mix}")
             gold = torch.tensor(it["gold_target"], device=device)
-            it["target"] = ((1 - teacher_mix) * gold + teacher_mix * probs[j, :k]).cpu().tolist()
+            it["target"] = ((1 - mix) * gold + mix * probs[j, :k]).cpu().tolist()
 
 
 def main():
