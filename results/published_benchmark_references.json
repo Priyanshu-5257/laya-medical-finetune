@@ -1,0 +1,65 @@
+{
+  "metric": "accuracy_percent",
+  "scope": "Selected published reference results; not a verified current leaderboard or controlled comparison.",
+  "references": [
+    {
+      "model": "Bio+Clinical BERT",
+      "scores": {
+        "mednli_test": 82.7
+      },
+      "source": "https://aclanthology.org/W19-1909.pdf",
+      "table": "Table 2",
+      "notes": "Task-specific fine-tuning. Use Table 2; nearby prose inconsistently states 85.4."
+    },
+    {
+      "model": "Bio-lm RoBERTa-large (ours-large)",
+      "scores": {
+        "mednli_test": 88.5
+      },
+      "source": "https://aclanthology.org/2020.clinicalnlp-1.17.pdf",
+      "table": "Tables 2 and 5",
+      "notes": "PubMed/MIMIC pretraining with specialized vocabulary; task-specific fine-tuning; median of five seeds."
+    },
+    {
+      "model": "BioLinkBERT-base (110M)",
+      "scores": {
+        "medqa_test": 40.0,
+        "pubmedqa_test": 70.2
+      },
+      "source": "https://arxiv.org/html/2203.15827",
+      "table": "Tables 7 and 8",
+      "notes": "MedQA explicitly four options; separate task-specific fine-tuning for MedQA and BLURB PubMedQA."
+    },
+    {
+      "model": "BioLinkBERT-large (340M)",
+      "scores": {
+        "medqa_test": 44.6,
+        "pubmedqa_test": 72.18
+      },
+      "source": "https://arxiv.org/html/2203.15827",
+      "table": "Tables 7 and 8",
+      "notes": "MedQA explicitly four options; separate task-specific fine-tuning for MedQA and BLURB PubMedQA."
+    },
+    {
+      "model": "Med-PaLM 2 (best)",
+      "scores": {
+        "medmcqa_validation": 72.3,
+        "pubmedqa_test": 81.8
+      },
+      "context_only_scores": {
+        "medqa_unspecified_option_variant": 86.5
+      },
+      "source": "https://arxiv.org/html/2305.09617",
+      "table": "Tables 1 and 4",
+      "notes": "Different best prompting strategies/checkpoints across tasks; medical instruction fine-tuning and multi-sample inference. MedMCQA evaluation n=4183; PubMedQA n=500. MedQA n=1273, exact four/five-option variant not independently established, so its score is contextual only."
+    }
+  ],
+  "our_evaluation_notes": [
+    "All saved model arms evaluated without further training or test-time tuning; one training seed.",
+    "MedMCQA uses all labeled validation examples, not hidden-label test; prior validation subsets informed development.",
+    "MedNLI uses all 1422 test examples from a processed Hugging Face mirror; official dataset identity has not been independently authenticated.",
+    "Earlier experiments inspected 400 MedQA test examples and a PubMedQA sample overlapping official test; these full scores are not fresh blind holdout results.",
+    "Laya inference uses canonical option order, max_len=512, head_max_len=192; context truncation may affect long inputs.",
+    "Published encoder scores use task-specific fine-tuning; our saved checkpoints are shared across medical tasks. LLM references also differ in scale, training data and inference budget."
+  ]
+}
